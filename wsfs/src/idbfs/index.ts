@@ -1,4 +1,4 @@
-import { Aggregation, Chunk, FileInode, Inode } from "./types";
+import { Aggregation, Chunk, FileInode, FileType, Inode } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -11,19 +11,29 @@ function openIdbFs(name: string): Promise<IdbFs> {
 			const db = request.result;
 
 			// File tree (inodes)
-			db.createObjectStore("inodes", {
-				autoIncrement: false,
-				keyPath: "filePath",
+			let inodes = new ObjStoreWrapper<Inode>(db.createObjectStore("inodes", {
+				autoIncrement: true,
+				keyPath: "id",
+			}));
+			inodes.add({
+				id: 0,
+				type: FileType.DT_DIR,
+				parent: 0, // `/../` is the same as `/`
+				mode: 0o755,
+				subdirs: new Map(),
+				xattrs: {},
 			});
+
 			// Data aggregation instructions
 			db.createObjectStore("aggs", {
 				autoIncrement: true,
-				keyPath: "aggId",
+				keyPath: "id",
 			});
+
 			// Data chunks
 			db.createObjectStore("chunks", {
 				autoIncrement: true,
-				keyPath: "chunkId",
+				keyPath: "id",
 			});
 		};
 		request.onsuccess = () => {
@@ -35,7 +45,9 @@ function openIdbFs(name: string): Promise<IdbFs> {
 	});
 }
 
-class ObjStoreWrapper<T> {
+type Defined<T> = T extends null | undefined ? never : T;
+
+class ObjStoreWrapper<T extends { id?: IDBValidKey }> {
 	store: IDBObjectStore;
 
 	constructor(store: IDBObjectStore) {
@@ -43,7 +55,7 @@ class ObjStoreWrapper<T> {
 	}
 
 	/** Get object from store */
-	get(query: IDBValidKey | IDBKeyRange) {
+	get(query: Defined<T["id"]> | IDBKeyRange) {
 		return new Promise<T>((res, rej) => {
 			const result = this.store.get(query);
 			result.onsuccess = () => res(result.result);
@@ -53,24 +65,24 @@ class ObjStoreWrapper<T> {
 
 	/** Add object to store */
 	add(obj: T) {
-		return new Promise<IDBValidKey>((res, rej) => {
+		return new Promise<Defined<T["id"]>>((res, rej) => {
 			const result = this.store.add(obj);
-			result.onsuccess = () => res(result.result);
+			result.onsuccess = () => res(result.result as Defined<T["id"]>);
 			result.onerror = () => rej(result.error);
 		});
 	}
 
 	/** Update/Add an object in the store */
 	put(obj: T) {
-		return new Promise<IDBValidKey>((res, rej) => {
+		return new Promise<Defined<T["id"]>>((res, rej) => {
 			const result = this.store.put(obj);
-			result.onsuccess = () => res(result.result);
+			result.onsuccess = () => res(result.result as Defined<T["id"]>);
 			result.onerror = () => rej(result.error);
 		});
 	}
 
 	/** Delete object from store */
-	delete(key: IDBValidKey | IDBKeyRange) {
+	delete(key: Defined<T["id"]> | IDBKeyRange) {
 		return new Promise<void>((res, rej) => {
 			const result = this.store.delete(key);
 			result.onsuccess = () => res();
@@ -89,74 +101,17 @@ class FsError extends Error {}
 const defaultPermissions = 0o0666;
 
 /**
- * An interface to a filesystem backed by IndexedDB. For use in the wslinux project.
+ * An interface to a filesystem backed by IndexedDB.
  */
 class IdbFs {
 	db: IDBDatabase;
 	umask: number;
+	inodeCache: Map<number, Inode>;
 
-	/**
-	 * @param database The database to back the filesystem
-	 */
 	constructor(database: IDBDatabase) {
 		this.db = database;
 		this.umask = 0o0022;
-	}
-
-	/** Writes a blob into a file in the filesystem */
-	async writeFileAll(path: string, contents: Uint8Array) {
-		const transaction = this.db.transaction(["inodes", "aggs", "chunks"], "readwrite");
-		const inodes = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggs = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
-		const chunks = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
-
-		// TODO: Traverse directories and verify that parents exist
-
-		let existingInode: Inode | undefined = await inodes.get(path);
-		console.log(existingInode);
-
-		const chunk: Chunk = {
-			data: contents,
-		};
-		const chunkId = await chunks.add(chunk);
-
-		if (typeof existingInode == "undefined") {
-			// Create new chunk, agg, and inode
-
-			const agg: Aggregation = {
-				linkedInodes: 1,
-				chunks: [[contents.byteLength, chunkId]],
-			};
-			const aggId = await aggs.add(agg);
-
-			const inode: FileInode = {
-				aggId,
-				filePath: path,
-				mode: defaultPermissions & (~this.umask),
-				xattrs: {},
-			};
-			const inodeId = await inodes.add(inode);
-		} else {
-			// Delete all chunks, replace with new chunk
-
-			if (!("aggId" in existingInode)) {
-				throw new FsError("Tried to write to a directory")
-			}
-
-			const agg: Aggregation = await aggs.get(existingInode.aggId);
-
-			// Delete all existing chunks
-			await Promise.all(
-				agg.chunks
-					.map(([_size, chunk]) => chunks.get(chunk)),
-			);
-
-			// Replace chunk map
-			agg.chunks = [[contents.byteLength, chunkId]];
-
-			// Update agg
-			await aggs.put(agg);
-		}
+		this.inodeCache = new Map();
 	}
 }
 
