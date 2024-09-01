@@ -1,3 +1,7 @@
+import './style.css'
+
+import { openIdbFs } from "./idbfs";
+
 (async () => {
 	const fs = await openIdbFs("idbfs");
 	const textContents = "Hello, world!";

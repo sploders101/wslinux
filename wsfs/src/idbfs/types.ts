@@ -1,25 +1,25 @@
-type Inode = FileInode | DirInode;
-interface BaseInode {
+export type Inode = FileInode | DirInode;
+export interface BaseInode {
 	filePath: string,
 	mode: number,
 	xattrs: Record<string, Uint8Array>,
 }
-interface FileInode extends BaseInode {
-	aggId: number,
+export interface FileInode extends BaseInode {
+	aggId: IDBValidKey,
 }
-interface DirInode extends BaseInode {
+export interface DirInode extends BaseInode {
 	subdirs: string[]
 }
 
-interface Aggregation {
+export interface Aggregation {
 	aggId?: number,
 	// Reference counter for cleanup on deletion (allows hard-links)
-	linkedInodes: usize,
+	linkedInodes: number,
 	/** size, chunkId allows calculation of which chunks are needed without fetching linked-list style */
-	chunks: Array<[number, number]>,
+	chunks: Array<[number, IDBValidKey]>,
 }
 
-interface Chunk {
+export interface Chunk {
 	chunkId?: number,
 	data: Uint8Array,
 }
