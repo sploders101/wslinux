@@ -1,3 +1,4 @@
+import { ObjStoreWrapper } from "./idbWrappers";
 import { Aggregation, Chunk, FileInode, FileType, Inode } from "./types";
 
 /**
@@ -45,58 +46,11 @@ function openIdbFs(name: string): Promise<IdbFs> {
 	});
 }
 
-type Defined<T> = T extends null | undefined ? never : T;
-
-class ObjStoreWrapper<T extends { id?: IDBValidKey }> {
-	store: IDBObjectStore;
-
-	constructor(store: IDBObjectStore) {
-		this.store = store;
-	}
-
-	/** Get object from store */
-	get(query: Defined<T["id"]> | IDBKeyRange) {
-		return new Promise<T>((res, rej) => {
-			const result = this.store.get(query);
-			result.onsuccess = () => res(result.result);
-			result.onerror = () => rej(result.error);
-		});
-	}
-
-	/** Add object to store */
-	add(obj: T) {
-		return new Promise<Defined<T["id"]>>((res, rej) => {
-			const result = this.store.add(obj);
-			result.onsuccess = () => res(result.result as Defined<T["id"]>);
-			result.onerror = () => rej(result.error);
-		});
-	}
-
-	/** Update/Add an object in the store */
-	put(obj: T) {
-		return new Promise<Defined<T["id"]>>((res, rej) => {
-			const result = this.store.put(obj);
-			result.onsuccess = () => res(result.result as Defined<T["id"]>);
-			result.onerror = () => rej(result.error);
-		});
-	}
-
-	/** Delete object from store */
-	delete(key: Defined<T["id"]> | IDBKeyRange) {
-		return new Promise<void>((res, rej) => {
-			const result = this.store.delete(key);
-			result.onsuccess = () => res();
-			result.onerror = () => rej(result.error);
-		});
-	}
-}
-
-
 /**
  * Filesystem error to be returned via FUSE.
  * TODO: Extend with more specific options rather than normal error constructor.
  */
-class FsError extends Error {}
+class FsError extends Error { }
 
 const defaultPermissions = 0o0666;
 
@@ -105,13 +59,101 @@ const defaultPermissions = 0o0666;
  */
 class IdbFs {
 	db: IDBDatabase;
-	umask: number;
-	inodeCache: Map<number, Inode>;
+	/** inodes that need to be cleaned up once they are closed */
+	unlinkedInodes: number[];
 
 	constructor(database: IDBDatabase) {
 		this.db = database;
-		this.umask = 0o0022;
-		this.inodeCache = new Map();
+		this.unlinkedInodes = [];
+	}
+
+	/** Create a new directory */
+	async mkdir(parent: number, name: string, mode: number): Promise<number> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const parentInode = await inodeStore.get(parent);
+		if (parentInode.type !== FileType.DT_DIR) {
+			throw new FsError("Parent must be a directory");
+		}
+		if (name in parentInode.subdirs) {
+			throw new FsError("Directory already exists");
+		}
+
+		const inode: Inode = {
+			type: FileType.DT_DIR,
+			mode,
+			parent,
+			subdirs: {},
+			xattrs: {},
+		};
+		const inodeId = await inodeStore.add(inode);
+
+		parentInode.subdirs.set(name, inodeId);
+		await inodeStore.add(parentInode);
+
+		transaction.commit();
+		return inodeId;
+	}
+
+	/** Link tmpfile to filesystem */
+	async linkFile(file: number, parent: number, name: string) {
+		const transaction = this.db.transaction(["inodes", "aggs", "chunks"], "readwrite");
+
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
+		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+
+		const parentInode = await inodeStore.get(parent);
+		if (parentInode.type !== FileType.DT_DIR) {
+			throw new FsError("No such file or directory");
+		}
+		let olddir = parentInode.subdirs.get(name);
+		parentInode.subdirs.set(name, file);
+		await inodeStore.add(parentInode);
+
+		if (typeof olddir === "number") {
+			// TODO: Clean up defunct inode
+		}
+	}
+
+	/** Unlinks a file from the filesystem */
+	async unlinkFile(parent: number, name: string) {
+		const transaction = this.db.transaction(["inodes", "aggs", "chunks"], "readwrite");
+
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
+		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+
+		const parentInode = await inodeStore.get(parent);
+		if (parentInode.type !== FileType.DT_DIR) {
+			throw new FsError("No such file or directory");
+		}
+	}
+
+	/** Create a temporary file */
+	async createTmpFile(mode: number): Promise<number> {
+		const transaction = this.db.transaction(["inodes", "aggs", "chunks"], "readwrite");
+
+		const agg: Aggregation = {
+			chunks: [],
+			linkedInodes: 1,
+		};
+		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
+		const aggId = await aggStore.add(agg);
+
+		const inode: Inode = {
+			type: FileType.DT_REG,
+			mode,
+			xattrs: {},
+			aggId,
+		};
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		const inodeId = await inodeStore.add(inode);
+
+		transaction.commit();
+		return inodeId;
 	}
 }
 

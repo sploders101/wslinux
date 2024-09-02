@@ -15,6 +15,14 @@ export enum FileType {
 /** Common properties of all inodes */
 export interface BaseInode {
 	id?: number,
+	/**
+	 * Inode "lookup count" from FUSE driver.
+	 * Whenever an inode number is returned, the lookup count must increase. Whenever the
+	 * `forget(inode)` function is called, the count must decrease. When the count reaches
+	 * zero, the inode can be deleted.
+	 * TODO: Add lookup increments to functions.
+	 */
+	lookups: number,
 	mode: number,
 	xattrs: Record<string, Uint8Array>,
 }
@@ -62,14 +70,30 @@ export interface IpcInode extends BaseInode {
 }
 
 
+/**
+ * Aggregates chunks outside the inode to allow for easy hard-links.
+ */
 export interface Aggregation {
 	id?: number,
-	// Reference counter for cleanup on deletion (allows hard-links)
+	/**
+	 * Counts the number of inodes that reference this data. This value is used to
+	 * support hard links. When a file is created, it is initialized to 1. When a
+	 * hard link is created, this number is incremented. When an inode is deleted,
+	 * this number is decremented. When it reaches 0, it and all chunks it references
+	 * should be deleted.
+	 */
 	linkedInodes: number,
-	/** size, chunkId allows calculation of which chunks are needed without fetching linked-list style */
+	/**
+	 * `(size, chunkId)`
+	 *
+	 * Allows calculation of which chunks are needed without fetching linked-list style
+	 */
 	chunks: Array<[number, IDBValidKey]>,
 }
 
+/**
+ * Represents a small part of a file.
+ */
 export interface Chunk {
 	id?: number,
 	data: Uint8Array,
