@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { Aggregation, Chunk, FileType, Inode, NodeStat } from "./types";
+import { Chunk, FileType, Inode, NodeStat } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -27,6 +27,8 @@ function openIdbFs(name: string): Promise<IdbFs> {
 				deleted: false,
 				generation: -1, // Not representable in u64. Indicates placeholder.
 				ctime: now,
+				crtime: now,
+				mtime: now,
 				uid: 0,
 				gid: 0,
 				mode: 0o755,
@@ -40,18 +42,13 @@ function openIdbFs(name: string): Promise<IdbFs> {
 				generation: gengen(),
 				parent: 1, // `/../` is the same as `/`
 				ctime: now,
+				crtime: now,
 				mtime: now,
 				uid: 0,
 				gid: 0,
 				mode: 0o755,
 				subdirs: new Map(),
 				xattrs: new Map(),
-			});
-
-			// Data aggregation instructions
-			db.createObjectStore("aggs", {
-				autoIncrement: true,
-				keyPath: "id",
 			});
 
 			// Data chunks
@@ -98,14 +95,10 @@ function gengen(): number {
  */
 class IdbFs {
 	db: IDBDatabase;
-	/** inodes that need to be cleaned up once they are closed */
-	unlinkedInodes: number[];
-
 	blockSize: number;
 
 	constructor(database: IDBDatabase) {
 		this.db = database;
-		this.unlinkedInodes = [];
 		this.blockSize = defaultBlockSize; // May be configurable later. We'll see...
 	}
 
@@ -137,9 +130,8 @@ class IdbFs {
 
 	async forget(inodeNum: number, nlookup: number) {
 		// Decrement lookup count by nlookup and delete inode if it is staged for deletion
-		const transaction = this.db.transaction(["inodes", "aggs", "chunks"], "readwrite");
+		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 		const inode = await inodeStore.get(inodeNum);
@@ -150,14 +142,10 @@ class IdbFs {
 		if (inode.deleted) {
 			await inodeStore.delete(inodeNum);
 			if (inode.type === FileType.File) {
-				const agg = await aggStore.get(inode.aggId);
-				if (typeof agg !== "undefined") {
-					agg.linkedInodes -= 1;
-					if (agg.linkedInodes === 0) {
-						// < 0 bug checks done in GC because I want to know about them.
-						for (const chunk of agg.chunks) {
-							await chunkStore.delete(chunk);
-						}
+				inode.hardLinks -= 1;
+				if (inode.hardLinks === 0) {
+					for (const chunk of inode.chunks) {
+						await chunkStore.delete(chunk);
 					}
 				}
 			}
@@ -165,9 +153,8 @@ class IdbFs {
 	}
 
 	async getattr(inodeNum: number): Promise<NodeStat> {
-		const transaction = this.db.transaction(["inodes", "aggs"], "readonly");
+		const transaction = this.db.transaction(["inodes"], "readonly");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
 
 		const inode = await inodeStore.get(inodeNum);
 		if (typeof inode === "undefined") {
@@ -183,16 +170,12 @@ class IdbFs {
 		let blksize: number;
 
 		if (inode.type === FileType.File) {
-			const agg = await aggStore.get(inode.aggId);
-			if (typeof agg === "undefined") {
-				throw new FsError("Bad file descriptor");
-			}
-			size = agg.chunks.length * agg.chunksize - agg.trim;
-			blocks = agg.chunks.length;
-			mtimeMs = agg.mtime;
-			nlink = agg.linkedInodes;
+			size = inode.chunks.length * inode.chunksize - inode.trim;
+			blocks = inode.chunks.length;
+			mtimeMs = inode.mtime;
+			nlink = inode.hardLinks;
 			rdev = 0;
-			blksize = agg.chunksize;
+			blksize = inode.chunksize;
 		} else {
 			if (inode.type === FileType.Special) {
 				rdev = inode.rdev;
@@ -233,9 +216,8 @@ class IdbFs {
 	    ctime: number | null,
 	    crtime: number | null,
 	): Promise<NodeStat> {
-		const transaction = this.db.transaction(["inodes", "aggs"], "readwrite");
+		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
 
 		const inode = await inodeStore.get(ino);
 		if (typeof inode === "undefined") {
@@ -245,14 +227,8 @@ class IdbFs {
 		if (mode !== null) inode.mode = mode;
 		if (uid !== null) inode.uid = uid;
 		if (gid !== null) inode.gid = gid;
-		if (size !== null && inode.type === FileType.File) await this.truncateAgg(inode.aggId, size);
-		if (mtime !== null) {
-			if (inode.type === FileType.File) {
-				await this.setmtimeAgg(inode.aggId, mtime);
-			} else if(inode.type === FileType.Directory) {
-				inode.mtime = mtime;
-			}
-		}
+		if (size !== null && inode.type === FileType.File) await this.truncate(inode, size);
+		if (mtime !== null) inode.mtime = mtime;
 		if (ctime !== null) inode.ctime = ctime;
 		if (crtime !== null) inode.crtime = crtime;
 
@@ -281,9 +257,8 @@ class IdbFs {
 		umask: number,
 		rdev: number,
 	): Promise<Inode> {
-		const transaction = this.db.transaction(["inodes", "aggs"], "readwrite");
+		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
 
 		const parentInode = await inodeStore.get(parent);
 		if (typeof parentInode === "undefined") {
@@ -320,25 +295,21 @@ class IdbFs {
 			case S_IFLNK:
 				throw new FsError("Can't create link from mknod");
 			case S_IFREG:
-				const agg: Aggregation = {
-					chunksize: this.blockSize,
-					chunks: [],
-					linkedInodes: 1,
-					mtime: now,
-					trim: 0,
-				};
-				const aggId = await aggStore.add(agg);
 				inode = {
 					type: FileType.File,
 					lookups: 0,
+					hardLinks: 1,
 					deleted: false,
 					generation: gengen(),
 					crtime: now,
 					ctime: now,
+					mtime: now,
 					mode: mode & (~umask),
 					gid,
 					uid,
-					aggId,
+					chunks: [],
+					chunksize: this.blockSize,
+					trim: 0,
 					xattrs: new Map(),
 				};
 				break;
@@ -354,6 +325,7 @@ class IdbFs {
 					generation: gengen(),
 					crtime: now,
 					ctime: now,
+					mtime: now,
 					mode: mode & (~umask),
 					gid,
 					uid,
@@ -448,6 +420,7 @@ class IdbFs {
 			generation: gengen(),
 			crtime: now,
 			ctime: now,
+			mtime: now,
 			mode: S_IFLNK | 0o777,
 			gid,
 			uid,
@@ -499,10 +472,9 @@ class IdbFs {
 		]);
 	}
 
-	async link(uid: number, gid: number, ino: number, newparent: number, newname: string): Promise<NodeStat> {
-		const transaction = this.db.transaction(["inodes", "aggs"], "readwrite");
+	async link(ino: number, newparent: number, newname: string): Promise<NodeStat> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const aggStore = new ObjStoreWrapper<Aggregation>(transaction.objectStore("aggs"));
 
 		const inode = await inodeStore.get(ino);
 		if (typeof inode === "undefined") {
@@ -519,22 +491,9 @@ class IdbFs {
 			throw new FsError("File already exists");
 		}
 
-		const now = Date.now();
-		const newIno = await inodeStore.add({
-			type: FileType.File,
-			lookups: 0,
-			deleted: false,
-			generation: gengen(),
-			crtime: now,
-			ctime: now,
-			mode: inode.mode,
-			gid,
-			uid,
-			xattrs: new Map(),
-			aggId: inode.aggId,
-		})
+		newparentInode.subdirs.set(newname, ino);
 
-		newparentInode.subdirs.set(newname, newIno);
+		return await this.getattr(ino);
 	}
 }
 

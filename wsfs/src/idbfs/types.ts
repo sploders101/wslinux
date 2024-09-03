@@ -32,6 +32,9 @@ export interface BaseInode {
 	/** Time that the inode was created */
 	crtime: number,
 
+	/** Time of last modification */
+	mtime: number,
+
 	uid: number,
 	gid: number,
 	mode: number,
@@ -56,7 +59,17 @@ export interface SpecialInode extends BaseInode {
 /** Regular Files */
 export interface FileInode extends BaseInode {
 	type: FileType.File,
-	aggId: number,
+	hardLinks: number,
+	/** The size of each chunk in `chunks` */
+	chunksize: number,
+	/** The number of bytes to trim from the end of the last chunk */
+	trim: number,
+	/**
+	 * `(size, chunkId)`
+	 *
+	 * Allows calculation of which chunks are needed without fetching linked-list style
+	 */
+	chunks: Array<number>,
 }
 
 /** Directories */
@@ -73,33 +86,6 @@ export interface LinkInode extends BaseInode {
 	type: FileType.Symlink,
 	parent: number,
 	target: string,
-}
-
-/**
- * Aggregates chunks outside the inode to allow for easy hard-links.
- */
-export interface Aggregation {
-	id?: number,
-	/**
-	 * Counts the number of inodes that reference this data. This value is used to
-	 * support hard links. When a file is created, it is initialized to 1. When a
-	 * hard link is created, this number is incremented. When an inode is deleted,
-	 * this number is decremented. When it reaches 0, it and all chunks it references
-	 * should be deleted.
-	 */
-	linkedInodes: number,
-	/** Last modified time (in ms) */
-	mtime: number,
-	/** The size of each chunk in `chunks` */
-	chunksize: number,
-	/** The number of bytes to trim from the end of the last chunk */
-	trim: number,
-	/**
-	 * `(size, chunkId)`
-	 *
-	 * Allows calculation of which chunks are needed without fetching linked-list style
-	 */
-	chunks: Array<number>,
 }
 
 /**
