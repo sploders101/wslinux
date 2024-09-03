@@ -515,9 +515,53 @@ class IdbFs {
 			flags: 0,
 		};
 	}
+
+	// TODO: Needs review
+	async read(
+		ino: number,
+	    _fh: number,
+	    offset: number,
+	    size: number,
+	    flags: number,
+	    lock_owner: number | null,
+	): Promise<Uint8Array> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+
+		const inode = await inodeStore.get(ino);
+		if (typeof inode === "undefined") {
+			throw new FsError("No such file or directory");
+		}
+		if (inode.type !== FileType.File) {
+			throw new FsError("Can only open files");
+		}
+
+		const availableSize = inode.chunks.length * inode.chunksize - inode.trim - offset;
+		size = Math.min(availableSize, size);
+
+		const destBuf = new Uint8Array(size);
+		let copiedBytes = 0;
+		while (copiedBytes < size) {
+			const start = offset - copiedBytes;
+			const startChunkIdx = Math.floor(start / inode.chunksize);
+			const chunkSubIdx = start % inode.chunksize;
+			const chunkId = inode.chunks[startChunkIdx];
+			let chunk = await chunkStore.get(chunkId);
+			if (typeof chunk === "undefined") {
+				console.warn("Missing chunk", inode);
+				chunk = {id: chunkId, data: new Uint8Array(inode.chunksize)};
+			}
+			destBuf.set(chunk.data.slice(chunkSubIdx), copiedBytes);
+			copiedBytes += inode.chunksize;
+		}
+
+		return destBuf;
+	}
 }
 
 export {
 	openIdbFs,
 	IdbFs,
 };
+
