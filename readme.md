@@ -23,6 +23,12 @@ Continuing on the theme of "Cloud Native" and "the web", only one option remains
 that serves a FUSE filesystem via WebSocket? Then, I could serve it via Github pages and create a driver to consume the
 files, with an initramfs similar to what they did for Google Drive.
 
+Also, because it's built on web technologies, it can run on anything that supports them, like say... a Chromecast.
+
+I want to be clear. This is a toy. It is not a real filesystem, and many features are likely missing. Also, you never
+know what the browser is going to do. It might come around at some point and decide that the user hasn't used the app
+in a few days, so they probably don't need it anyway, and wipe it all. This is NOT a good idea... but it's fun...
+
 
 ## Practicality
 
