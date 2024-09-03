@@ -59,6 +59,7 @@ export interface SpecialInode extends BaseInode {
 /** Regular Files */
 export interface FileInode extends BaseInode {
 	type: FileType.File,
+	openHandles: number,
 	hardLinks: number,
 	/** The size of each chunk in `chunks` */
 	chunksize: number,

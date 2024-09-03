@@ -495,10 +495,29 @@ class IdbFs {
 
 		return await this.getattr(ino);
 	}
+
+	async open(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (typeof inode === "undefined") {
+			throw new FsError("No such file or directory");
+		}
+		if (inode.type !== FileType.File) {
+			throw new FsError("Can only open files");
+		}
+		inode.openHandles += 1;
+		await inodeStore.put(inode);
+
+		return {
+			fh: ino,
+			flags: 0,
+		};
+	}
 }
 
 export {
 	openIdbFs,
 	IdbFs,
 };
-
