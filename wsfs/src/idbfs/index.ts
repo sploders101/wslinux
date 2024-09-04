@@ -516,14 +516,11 @@ class IdbFs {
 		};
 	}
 
-	// TODO: Needs review
 	async read(
 		ino: number,
 	    _fh: number,
 	    offset: number,
 	    size: number,
-	    flags: number,
-	    lock_owner: number | null,
 	): Promise<Uint8Array> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
@@ -543,17 +540,23 @@ class IdbFs {
 		const destBuf = new Uint8Array(size);
 		let copiedBytes = 0;
 		while (copiedBytes < size) {
-			const start = offset - copiedBytes;
-			const startChunkIdx = Math.floor(start / inode.chunksize);
-			const chunkSubIdx = start % inode.chunksize;
+			const startByte = size - copiedBytes;
+			const startChunkIdx = Math.floor(startByte / inode.chunksize);
+			const startSubIdx = startByte % inode.chunksize;
+			const endSubIdx = Math.min(size - copiedBytes, inode.chunksize);
 			const chunkId = inode.chunks[startChunkIdx];
-			let chunk = await chunkStore.get(chunkId);
-			if (typeof chunk === "undefined") {
-				console.warn("Missing chunk", inode);
-				chunk = {id: chunkId, data: new Uint8Array(inode.chunksize)};
+			let chunk;
+			if (chunkId === -1) {
+				// Sparse files
+				chunk = { id: inode.chunks[startChunkIdx], data: new Uint8Array(inode.chunksize) };
+			} else {
+				chunk = await chunkStore.get(chunkId);
+				if (typeof chunk === "undefined") {
+					throw new FsError("Missing chunk. Inode inconsistency issue.");
+				}
 			}
-			destBuf.set(chunk.data.slice(chunkSubIdx), copiedBytes);
-			copiedBytes += inode.chunksize;
+			destBuf.set(chunk.data.slice(startSubIdx, endSubIdx), copiedBytes);
+			copiedBytes += endSubIdx - startSubIdx;
 		}
 
 		return destBuf;
@@ -564,4 +567,3 @@ export {
 	openIdbFs,
 	IdbFs,
 };
-
