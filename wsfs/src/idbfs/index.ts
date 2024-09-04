@@ -107,7 +107,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const parentInode = await inodeStore.get(parent);
-		if (typeof parentInode === "undefined") {
+		if (parentInode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (parentInode.type !== FileType.Directory) {
@@ -119,7 +119,7 @@ class IdbFs {
 			throw new FsError("No such file or directory");
 		}
 		const childInode = await inodeStore.get(childInodeNum);
-		if (typeof childInode === "undefined") {
+		if (childInode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		childInode.lookups += 1;
@@ -135,7 +135,7 @@ class IdbFs {
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 		const inode = await inodeStore.get(inodeNum);
-		if (typeof inode === "undefined") return;
+		if (inode === undefined) return;
 		inode.lookups -= nlookup;
 
 		// Delete data if unreferenced
@@ -157,7 +157,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(inodeNum);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			// Inode? File descriptor? I think I'm gonna return EBADF here....
 			throw new FsError("Bad file descriptor");
 		}
@@ -220,7 +220,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("Bad file descriptor");
 		}
 
@@ -242,7 +242,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") throw new FsError("No such file or directory");
+		if (inode === undefined) throw new FsError("No such file or directory");
 		if (inode.type !== FileType.Symlink) throw new FsError("Not a symlink");
 		return inode.target;
 	}
@@ -261,7 +261,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const parentInode = await inodeStore.get(parent);
-		if (typeof parentInode === "undefined") {
+		if (parentInode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (parentInode.type !== FileType.Directory) {
@@ -353,7 +353,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const parentInode = await inodeStore.get(parent);
-		if (typeof parentInode === "undefined") {
+		if (parentInode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (parentInode.type !== FileType.Directory) {
@@ -366,7 +366,7 @@ class IdbFs {
 		}
 
 		const inode = await inodeStore.get(inodeNum);
-		if (typeof inode !== "undefined") {
+		if (inode !== undefined) {
 			if (inode.type === FileType.Directory) {
 				if (!rmdir) {
 					throw new FsError("Cannot unlink directory");
@@ -403,7 +403,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const parentInode = await inodeStore.get(parent);
-		if (typeof parentInode === "undefined" || parentInode.type !== FileType.Directory) {
+		if (parentInode === undefined || parentInode.type !== FileType.Directory) {
 			throw new FsError("No such file or directory");
 		}
 		if (parentInode.subdirs.has(linkName)) {
@@ -440,20 +440,20 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const parentInode = await inodeStore.get(parent);
-		if (typeof parentInode === "undefined" || parentInode.type !== FileType.Directory) {
+		if (parentInode === undefined || parentInode.type !== FileType.Directory) {
 			throw new FsError("No such file or directory");
 		}
 		const ino = parentInode.subdirs.get(name);
-		if (typeof ino === "undefined") {
+		if (ino === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 
 		const newparentInode = await inodeStore.get(newparent);
-		if (typeof newparentInode === "undefined" || newparentInode.type !== FileType.Directory) {
+		if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
 			throw new FsError("No such file or directory");
 		}
 
@@ -477,14 +477,14 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (inode.type !== FileType.File) {
 			throw new FsError("Can only hard-link regular files");
 		}
 		const newparentInode = await inodeStore.get(newparent);
-		if (typeof newparentInode === "undefined" || newparentInode.type !== FileType.Directory) {
+		if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
 			throw new FsError("No such file or directory");
 		}
 		if (newparentInode.subdirs.has(newname)) {
@@ -501,7 +501,7 @@ class IdbFs {
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (inode.type !== FileType.File) {
@@ -527,7 +527,7 @@ class IdbFs {
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (inode.type !== FileType.File) {
@@ -551,7 +551,7 @@ class IdbFs {
 				chunk = { id: inode.chunks[startChunkIdx], data: new Uint8Array(inode.chunksize) };
 			} else {
 				chunk = await chunkStore.get(chunkId);
-				if (typeof chunk === "undefined") {
+				if (chunk === undefined) {
 					throw new FsError("Missing chunk. Inode inconsistency issue.");
 				}
 			}
@@ -573,7 +573,7 @@ class IdbFs {
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 		const inode = await inodeStore.get(ino);
-		if (typeof inode === "undefined") {
+		if (inode === undefined) {
 			throw new FsError("No such file or directory");
 		}
 		if (inode.type !== FileType.File) {
