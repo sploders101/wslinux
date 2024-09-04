@@ -561,9 +561,48 @@ class IdbFs {
 
 		return destBuf;
 	}
+
+	async write(
+		ino: number,
+		_fh: number,
+		offset: number,
+		data: Uint8Array,
+	): Promise<number> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+
+		const inode = await inodeStore.get(ino);
+		if (typeof inode === "undefined") {
+			throw new FsError("No such file or directory");
+		}
+		if (inode.type !== FileType.File) {
+			throw new FsError("Can only open files");
+		}
+
+		const startAt = Math.floor(offset / inode.chunksize);
+		let cursor = offset;
+		const endAt = offset + data.length;
+		while (cursor < endAt) {
+			const thisChunk = Math.floor(cursor / inode.chunksize);
+
+			// Pad with zeros until we reach the desired index
+			while (inode.chunks.length < thisChunk) {
+				inode.chunks.push(-1);
+			}
+
+			// Insert new chunk
+
+			// Make sure to handle updates to existing chunks, and splicing new chunk IDs
+			// if the current ID is `-1` (sparse chunk)
+
+			// Don't forget `inode.trim`!
+		}
+	}
 }
 
 export {
 	openIdbFs,
 	IdbFs,
 };
+
