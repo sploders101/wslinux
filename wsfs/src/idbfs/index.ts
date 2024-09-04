@@ -298,6 +298,7 @@ class IdbFs {
 				inode = {
 					type: FileType.File,
 					lookups: 0,
+					openHandles: 0,
 					hardLinks: 1,
 					deleted: false,
 					generation: gengen(),
