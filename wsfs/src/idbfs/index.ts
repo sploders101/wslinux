@@ -581,24 +581,48 @@ class IdbFs {
 			throw new FsError("Can only open files");
 		}
 
-		const startAt = Math.floor(offset / inode.chunksize);
 		let cursor = offset;
 		const endAt = offset + data.length;
 		while (cursor < endAt) {
-			const thisChunk = Math.floor(cursor / inode.chunksize);
+			// Weird math. Probably want to simplify this later, but should work for now
+			const thisChunkIdx = Math.floor(cursor / inode.chunksize);
+			const subChunkStart = cursor % inode.chunksize;
+			const subChunkEnd = Math.min(inode.chunksize, endAt % inode.chunksize);
+			const dataStartIdx = cursor - offset;
+			const dataEndIdx = dataStartIdx + (subChunkEnd - subChunkStart);
 
 			// Pad with zeros until we reach the desired index
-			while (inode.chunks.length < thisChunk) {
+			while (inode.chunks.length < thisChunkIdx) {
 				inode.chunks.push(-1);
 			}
 
 			// Insert new chunk
+			const thisChunkId = inode.chunks[thisChunkIdx];
+			if (thisChunkId === undefined || thisChunkId === -1) {
+				// Create new chunk and assign
+				const newData = new Uint8Array(inode.chunksize);
+				newData.set(data.slice(dataStartIdx, dataEndIdx), dataStartIdx);
+				const newChunkId = await chunkStore.add({ data: newData });
+				inode.chunks[thisChunkId] = newChunkId;
+			} else {
+				// Update existing chunk
+				const chunk = await chunkStore.get(thisChunkId);
+				if (chunk === undefined) {
+					throw new FsError("Missing chunk");
+				}
+				chunk.data.set(data.slice(dataStartIdx, dataEndIdx), dataStartIdx);
+				await chunkStore.put(chunk);
+			}
 
-			// Make sure to handle updates to existing chunks, and splicing new chunk IDs
-			// if the current ID is `-1` (sparse chunk)
+			// Maybe a trim value isn't the best here, but I'm invested at this point
+			inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
+			if (inode.trim === inode.chunksize) inode.trim = 0;
 
-			// Don't forget `inode.trim`!
+			// Advance cursor by written amount
+			cursor += subChunkEnd - subChunkStart;
 		}
+
+		return data.length;
 	}
 }
 
