@@ -112,3 +112,14 @@ export interface NodeStat {
     rdev: number,
     blksize: number,
 }
+
+export interface FsStats {
+	blocks: number,
+    bfree: number,
+    bavail: number,
+    files: number,
+    ffree: number,
+    bsize: number,
+    namelen: number,
+    frsize: number
+}

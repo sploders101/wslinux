@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { Chunk, FileType, Inode, NodeStat } from "./types";
+import { Chunk, FileType, FsStats, Inode, NodeStat } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -73,7 +73,7 @@ function openIdbFs(name: string): Promise<IdbFs> {
 class FsError extends Error { }
 
 /** The size of each chunk */
-const defaultBlockSize = 256;
+const defaultBlockSize = 512;
 
 /** bitmask for file type inside mode */
 const S_IFMT = 0o170000;
@@ -96,10 +96,12 @@ function gengen(): number {
 class IdbFs {
 	db: IDBDatabase;
 	blockSize: number;
+	dirCache: Map<number, Map<string, number>>;
 
 	constructor(database: IDBDatabase) {
 		this.db = database;
 		this.blockSize = defaultBlockSize; // May be configurable later. We'll see...
+		this.dirCache = new Map();
 	}
 
 	async lookup(parent: number, name: string): Promise<NodeStat> {
@@ -623,6 +625,62 @@ class IdbFs {
 		}
 
 		return data.length;
+	}
+
+	async release(ino: number, _fh: number, _flags: number): Promise<void> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		}
+		if (inode.type !== FileType.File) {
+			throw new FsError("Can only open files");
+		}
+		inode.openHandles -= 1;
+		await inodeStore.put(inode);
+	}
+
+	async opendir(ino: number, flags: number): Promise<{ fh: number, flags: number }> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		} else if (inode.type !== FileType.Directory) {
+			throw new FsError("Not a directory");
+		}
+
+		let key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+		while (this.dirCache.has(key)) key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+		this.dirCache.set(key, inode.subdirs);
+
+		return {
+			fh: key,
+			flags: 0,
+		};
+	}
+
+	// TODO: readdir, readdirplus
+
+	async releasedir(_ino: number, fh: number, _flags: number): Promise<void> {
+		this.dirCache.delete(fh);
+	}
+
+	async statfs(): Promise<FsStats> {
+		const stats = await navigator.storage.estimate();
+		return {
+			blocks: (stats.quota || 0) / this.blockSize,
+		    bfree: (stats.quota || 0) - (stats.usage || 0),
+		    bavail: (stats.quota || 0) - (stats.usage || 0),
+		    files: 0, // TODO
+		    ffree: 0, // TODO
+		    bsize: this.blockSize,
+		    namelen: 255,
+		    frsize: 0
+		};
 	}
 }
 
