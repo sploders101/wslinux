@@ -59,6 +59,14 @@ itself using an immutable underlay using a startup watchdog launched before init
 even better since it would integrate with the existing system initramfs. I'll have to give that a look.
 
 
+## Todo
+
+[x] IndexedDB-backed filesystem in the browser
+[ ] Rust-based FUSE connector
+[ ] Initramfs & Arch install
+[ ] Database preseed for distribution
+
+
 ## Organization
 
 So let's give it a shot! This will be a monorepo for the whole project, and descriptions for each component will go
@@ -66,3 +74,5 @@ here as they are created.
 
 * `wsfs`: websocket file server
 	* This is the web app to run on your phone which will serve as the file server
+* `fuse-connector`: FUSE-to-websocket bridge
+	* This is the bridge that connects wsfs to Linux
