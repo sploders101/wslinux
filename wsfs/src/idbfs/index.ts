@@ -642,7 +642,7 @@ class IdbFs {
 		await inodeStore.put(inode);
 	}
 
-	async opendir(ino: number, flags: number): Promise<{ fh: number, flags: number }> {
+	async opendir(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
