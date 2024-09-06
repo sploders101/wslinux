@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { Chunk, FileType, FsStats, Inode, NodeStat } from "./types";
+import { Chunk, FileType, FsStats, Inode, NodeStat, ReaddirEntry } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -96,7 +96,7 @@ function gengen(): number {
 class IdbFs {
 	db: IDBDatabase;
 	blockSize: number;
-	dirCache: Map<number, Map<string, number>>;
+	dirCache: Map<number, ReaddirEntry[]>;
 
 	constructor(database: IDBDatabase) {
 		this.db = database;
@@ -655,7 +655,18 @@ class IdbFs {
 
 		let key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
 		while (this.dirCache.has(key)) key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
-		this.dirCache.set(key, inode.subdirs);
+
+		const subdirListing: ReaddirEntry[] = [];
+		for (const [subdirName, subdirIno] of inode.subdirs.entries()) {
+			const subdirInode = await inodeStore.get(subdirIno);
+			if (subdirInode === undefined) continue;
+			subdirListing.push({
+				ino: subdirIno,
+				name: subdirName,
+				type: subdirInode.mode | S_IFMT,
+			});
+		}
+		this.dirCache.set(key, subdirListing);
 
 		return {
 			fh: key,
@@ -663,7 +674,14 @@ class IdbFs {
 		};
 	}
 
-	// TODO: readdir, readdirplus
+	async readdir(_ino: number, fh: number): Promise<Array<ReaddirEntry>> {
+		const cachedDir = this.dirCache.get(fh);
+		if (cachedDir === undefined) {
+			throw new FsError("Bad file descriptor");
+		}
+
+		return cachedDir;
+	}
 
 	async releasedir(_ino: number, fh: number, _flags: number): Promise<void> {
 		this.dirCache.delete(fh);

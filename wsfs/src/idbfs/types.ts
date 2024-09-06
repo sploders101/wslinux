@@ -123,3 +123,9 @@ export interface FsStats {
     namelen: number,
     frsize: number
 }
+
+export interface ReaddirEntry {
+	name: string,
+	ino: number,
+	type: number,
+}
