@@ -700,9 +700,74 @@ class IdbFs {
 			frsize: 0
 		};
 	}
+
+	async setxattr(
+		ino: number,
+		name: string,
+		value: Uint8Array,
+		_flags: number,
+	): Promise<void> {
+		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		}
+
+		inode.xattrs.set(name, value);
+
+		await inodeStore.put(inode);
+	}
+
+	async getxattr(
+		ino: number,
+		name: string,
+	): Promise<Uint8Array> {
+		const transaction = this.db.transaction(["inodes"], "readonly");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		}
+
+		const result = inode.xattrs.get(name);
+		if (result === undefined) {
+			throw new FsError("No such attribute");
+		}
+
+		return result;
+	}
+
+	async listxattr(ino: number): Promise<string[]> {
+		const transaction = this.db.transaction(["inodes"], "readonly");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		}
+
+		return Array.from(inode.xattrs.keys());
+	}
+
+	async removexattr(ino: number, name: string): Promise<void> {
+		const transaction = this.db.transaction(["inodes"], "readonly");
+		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+		const inode = await inodeStore.get(ino);
+		if (inode === undefined) {
+			throw new FsError("No such file or directory");
+		}
+
+		inode.xattrs.delete(name);
+		await inodeStore.put(inode);
+	}
 }
 
 export {
 	openIdbFs,
 	IdbFs,
 };
+
