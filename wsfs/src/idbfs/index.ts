@@ -208,6 +208,38 @@ class IdbFs {
 		};
 	}
 
+	/** Sets a file's length. Locks chunk database. Do not call if you've already locked chunk database!!! */
+	private async truncate(inode: Inode, size: number): Promise<void> {
+		const transaction = this.db.transaction(["chunks"], "readwrite");
+		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+
+		if (inode.type !== FileType.File) {
+			// Maybe throw an error here? Not really sure...
+			return;
+		}
+		const expectedChunks = Math.floor(size / inode.chunksize);
+
+		inode.trim = inode.chunksize - (size % inode.chunksize)
+		if (inode.trim === inode.chunksize) inode.trim = 0;
+
+		if (inode.chunks.length < expectedChunks) {
+			while (inode.chunks.length < expectedChunks) {
+				inode.chunks.push(-1);
+			}
+		} else if (inode.chunks.length > expectedChunks) {
+			while (inode.chunks.length > expectedChunks) {
+				await chunkStore.delete(inode.chunks.pop()!);
+			}
+			if (inode.chunks.length > 0 && inode.trim > 0) {
+				const chunk = await chunkStore.get(inode.chunks[inode.chunks.length - 1]);
+				if (chunk !== undefined) {
+					chunk.data.set(new Array(inode.trim).fill(0), chunk.data.length - inode.trim);
+					await chunkStore.put(chunk);
+				}
+			}
+		}
+	}
+
 	async setattr(
 		ino: number,
 		mode: number | null,
