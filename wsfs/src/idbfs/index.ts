@@ -698,7 +698,7 @@ class IdbFs {
 			subdirListing.push({
 				ino: subdirIno,
 				name: subdirName,
-				type: subdirInode.mode | S_IFMT,
+				type: subdirInode.mode & S_IFMT,
 			});
 		}
 		this.dirCache.set(key, subdirListing);
