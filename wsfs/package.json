@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "gh-build": "tsc && vite build --base=/wslinux",
     "preview": "vite preview"
   },
   "devDependencies": {
