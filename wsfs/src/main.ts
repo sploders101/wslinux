@@ -1,7 +1,6 @@
 import './style.css'
 
 import { S_IFREG, openIdbFs } from "./idbfs";
-import { FileType } from './idbfs/types';
 
 (async () => {
 	const fs = await openIdbFs("idbfs");

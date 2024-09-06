@@ -13,7 +13,7 @@
     "noEmit": true,
 
     "strict": true,
-    "noUnusedLocals": "warn",
+    "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
