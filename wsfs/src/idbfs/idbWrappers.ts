@@ -9,7 +9,7 @@ export class ObjStoreWrapper<T extends { id?: IDBValidKey }> {
 
 	/** Get object from store */
 	get(query: Defined<T["id"]> | IDBKeyRange) {
-		return new Promise<T | undefined>((res, rej) => {
+		return new Promise<T & { id: Defined<T["id"]> } | undefined>((res, rej) => {
 			const result = this.store.get(query);
 			result.onsuccess = () => res(result.result);
 			result.onerror = () => rej(result.error);

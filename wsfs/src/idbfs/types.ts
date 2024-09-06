@@ -50,6 +50,8 @@ export type Inode =
 	| LinkInode
 	;
 
+export type AssignedInode = Inode & { id: number };
+
 /** Special Files */
 export interface SpecialInode extends BaseInode {
 	type: FileType.Special,

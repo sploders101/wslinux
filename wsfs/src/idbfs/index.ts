@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { Chunk, FileType, FsStats, Inode, NodeStat, ReaddirEntry } from "./types";
+import { AssignedInode, Chunk, FileType, FsStats, Inode, NodeStat, ReaddirEntry } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -76,14 +76,14 @@ class FsError extends Error { }
 const defaultBlockSize = 512;
 
 /** bitmask for file type inside mode */
-const S_IFMT = 0o170000;
-const S_IFDIR = 0o040000;
-const S_IFCHR = 0o020000;
-const S_IFBLK = 0o060000;
-const S_IFREG = 0o100000;
-const S_IFIFO = 0o010000;
-const S_IFLNK = 0o120000;
-const S_IFSOCK = 0o140000;
+export const S_IFMT = 0o170000;
+export const S_IFDIR = 0o040000;
+export const S_IFCHR = 0o020000;
+export const S_IFBLK = 0o060000;
+export const S_IFREG = 0o100000;
+export const S_IFIFO = 0o010000;
+export const S_IFLNK = 0o120000;
+export const S_IFSOCK = 0o140000;
 
 /** Generates a random `generation` number */
 function gengen(): number {
@@ -192,7 +192,7 @@ class IdbFs {
 		}
 
 		return {
-			ino: inode.id!,
+			ino: inode.id,
 			size,
 			blocks,
 			atimeMs: 0,
@@ -290,7 +290,7 @@ class IdbFs {
 		mode: number,
 		umask: number,
 		rdev: number,
-	): Promise<Inode> {
+	): Promise<AssignedInode> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -371,14 +371,15 @@ class IdbFs {
 		}
 
 		const inodeId = await inodeStore.add(inode);
+		inode.id = inodeId;
 		parentInode.subdirs.set(name, inodeId);
 		parentInode.mtime = Date.now();
 		await inodeStore.put(parentInode);
-		return inode;
+		return inode as AssignedInode;
 	}
 
 	/** Create a new directory */
-	mkdir(uid: number, gid: number, parent: number, name: string, mode: number): Promise<Inode> {
+	mkdir(uid: number, gid: number, parent: number, name: string, mode: number): Promise<AssignedInode> {
 		return this.mknod(uid, gid, parent, name, (mode & (~S_IFMT)) | S_IFDIR, 0, 0);
 	}
 
@@ -557,7 +558,7 @@ class IdbFs {
 		offset: number,
 		size: number,
 	): Promise<Uint8Array> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const transaction = this.db.transaction(["inodes", "chunks"], "readonly");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
@@ -575,7 +576,7 @@ class IdbFs {
 		const destBuf = new Uint8Array(size);
 		let copiedBytes = 0;
 		while (copiedBytes < size) {
-			const startByte = size - copiedBytes;
+			const startByte = offset + copiedBytes;
 			const startChunkIdx = Math.floor(startByte / inode.chunksize);
 			const startSubIdx = startByte % inode.chunksize;
 			const endSubIdx = Math.min(size - copiedBytes, inode.chunksize);
@@ -603,7 +604,7 @@ class IdbFs {
 		offset: number,
 		data: Uint8Array,
 	): Promise<number> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
@@ -637,7 +638,7 @@ class IdbFs {
 				const newData = new Uint8Array(inode.chunksize);
 				newData.set(data.slice(dataStartIdx, dataEndIdx), dataStartIdx);
 				const newChunkId = await chunkStore.add({ data: newData });
-				inode.chunks[thisChunkId] = newChunkId;
+				inode.chunks[thisChunkIdx] = newChunkId;
 			} else {
 				// Update existing chunk
 				const chunk = await chunkStore.get(thisChunkId);
@@ -655,6 +656,8 @@ class IdbFs {
 			// Advance cursor by written amount
 			cursor += subChunkEnd - subChunkStart;
 		}
+
+		await inodeStore.put(inode);
 
 		return data.length;
 	}
