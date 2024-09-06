@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: wslinux-homelab-ci
+    container:
+      image: node:22.6.0
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./wsfs
+
+      - name: Build project
+        run: npm run build
+        working-directory: ./wsfs
+
+      - name: Upload production-ready build files
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages
+          path: ./wsfs/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: wslinux-homelab-ci
+    container:
+      image: ghcr.io/actions/actions-runner:latest
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
