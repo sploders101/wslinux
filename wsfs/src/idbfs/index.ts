@@ -192,31 +192,31 @@ class IdbFs {
 		}
 
 		return {
-		    ino: inode.id!,
-		    size,
-		    blocks,
-		    atimeMs: 0,
-		    mtimeMs,
-		    ctimeMs: inode.ctime,
-		    crtimeMs: inode.crtime,
-		    mode: inode.mode,
-		    nlink,
-		    uid: inode.uid,
-		    gid: inode.gid,
-		    rdev,
-		    blksize,
+			ino: inode.id!,
+			size,
+			blocks,
+			atimeMs: 0,
+			mtimeMs,
+			ctimeMs: inode.ctime,
+			crtimeMs: inode.crtime,
+			mode: inode.mode,
+			nlink,
+			uid: inode.uid,
+			gid: inode.gid,
+			rdev,
+			blksize,
 		};
 	}
 
 	async setattr(
-	    ino: number,
-	    mode: number | null,
-	    uid: number | null,
-	    gid: number | null,
-	    size: number | null,
-	    mtime: number | null,
-	    ctime: number | null,
-	    crtime: number | null,
+		ino: number,
+		mode: number | null,
+		uid: number | null,
+		gid: number | null,
+		size: number | null,
+		mtime: number | null,
+		ctime: number | null,
+		crtime: number | null,
 	): Promise<NodeStat> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
@@ -521,9 +521,9 @@ class IdbFs {
 
 	async read(
 		ino: number,
-	    _fh: number,
-	    offset: number,
-	    size: number,
+		_fh: number,
+		offset: number,
+		size: number,
 	): Promise<Uint8Array> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
@@ -691,13 +691,13 @@ class IdbFs {
 		const stats = await navigator.storage.estimate();
 		return {
 			blocks: (stats.quota || 0) / this.blockSize,
-		    bfree: (stats.quota || 0) - (stats.usage || 0),
-		    bavail: (stats.quota || 0) - (stats.usage || 0),
-		    files: 0, // TODO
-		    ffree: 0, // TODO
-		    bsize: this.blockSize,
-		    namelen: 255,
-		    frsize: 0
+			bfree: (stats.quota || 0) - (stats.usage || 0),
+			bavail: (stats.quota || 0) - (stats.usage || 0),
+			files: 0, // TODO
+			ffree: 0, // TODO
+			bsize: this.blockSize,
+			namelen: 255,
+			frsize: 0
 		};
 	}
 }
@@ -706,4 +706,3 @@ export {
 	openIdbFs,
 	IdbFs,
 };
-
