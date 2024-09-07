@@ -40,7 +40,6 @@ jobs:
     runs-on: wslinux-homelab-ci
     container:
       image: ghcr.io/actions/actions-runner:latest
-    if: github.ref == 'refs/heads/main'
 
     permissions:
       pages: write      # to deploy to Pages
