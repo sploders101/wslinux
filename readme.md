@@ -30,6 +30,15 @@ know what the browser is going to do. It might come around at some point and dec
 in a few days, so they probably don't need it anyway, and wipe it all. This is NOT a good idea... but it's fun...
 
 
+## Security
+
+This project has not gone through any kind of security review yet. Use it at your own risk. If you use the CI-provided
+images, they include public self-signed certificates with keys that anyone can access, and therefore cannot be trusted
+for security. In theory though, if you build your own EFI image, they will be regenerated and may be secure. However,
+I offer no guarantee that this is the case. I am still assessing this project's usefulness as anything other than a
+toy, so I may never properly review it. Once again, use it at your own risk.
+
+
 ## Practicality
 
 Is it realistically practical? No. But could it be? Yeah, if you need a rescue disk in a pinch and all you have is that
