@@ -1,6 +1,7 @@
 use std::{path::Path, process::Command};
 
 fn main() {
+    // Generate self-signed certs to enable connecting from Github Pages.
     if !Path::new("./data/cert.pem").exists() {
         Command::new("openssl")
             .args([
