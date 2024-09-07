@@ -6,9 +6,9 @@ async function writeDemo(fs: IdbFs) {
 	const textContents = [
 		"# Wsfs",
 		"",
-		"This is Wsfs! It is a toy filesystem implemented entirely in javascript",
-		"and uses a Rust-based FUSE driver to connect it to your PC! It is intended",
-		"to be used for booting Linux using your phone's web browser as your system",
+		"This is Wsfs! It is a toy filesystem implemented entirely in javascript"
+		+ "and uses a Rust-based FUSE driver to connect it to your PC! It is intended"
+		+ "to be used for booting Linux using your phone's web browser as your system",
 		"disk. For more details, see the following link:",
 		"",
 		"[WSLinux](https://github.com/sploders101/wslinux)",
