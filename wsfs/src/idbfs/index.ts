@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { AssignedInode, Chunk, FileType, FsStats, Inode, NodeStat, ReaddirEntry } from "./types";
+import { AssignedInode, Chunk, FileType, FsStats, Inode, NodeAttr, ReaddirEntry } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -104,7 +104,7 @@ class IdbFs {
 		this.dirCache = new Map();
 	}
 
-	async lookup(parent: number, name: string): Promise<NodeStat> {
+	async lookup(parent: number, name: string): Promise<{ attr: NodeAttr, generation: number }> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -127,7 +127,10 @@ class IdbFs {
 		childInode.lookups += 1;
 		await inodeStore.put(childInode);
 
-		return await this.getattr(childInodeNum);
+		return {
+			attr: await this.getattr(childInodeNum),
+			generation: childInode.generation,
+		};
 	}
 
 	async forget(inodeNum: number, nlookup: number) {
@@ -154,7 +157,7 @@ class IdbFs {
 		}
 	}
 
-	async getattr(inodeNum: number): Promise<NodeStat> {
+	async getattr(inodeNum: number): Promise<NodeAttr> {
 		const transaction = this.db.transaction(["inodes"], "readonly");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -246,10 +249,10 @@ class IdbFs {
 		uid: number | null,
 		gid: number | null,
 		size: number | null,
-		mtime: number | null,
-		ctime: number | null,
-		crtime: number | null,
-	): Promise<NodeStat> {
+		mtimeMs: number | null,
+		ctimeMs: number | null,
+		crtimeMs: number | null,
+	): Promise<NodeAttr> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -262,9 +265,9 @@ class IdbFs {
 		if (uid !== null) inode.uid = uid;
 		if (gid !== null) inode.gid = gid;
 		if (size !== null && inode.type === FileType.File) await this.truncate(inode, size);
-		if (mtime !== null) inode.mtime = mtime;
-		if (ctime !== null) inode.ctime = ctime;
-		if (crtime !== null) inode.crtime = crtime;
+		if (mtimeMs !== null) inode.mtime = mtimeMs;
+		if (ctimeMs !== null) inode.ctime = ctimeMs;
+		if (crtimeMs !== null) inode.crtime = crtimeMs;
 
 		await inodeStore.put(inode);
 
@@ -434,7 +437,7 @@ class IdbFs {
 		return this.unlinkAny(parent, name, true);
 	}
 
-	async symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<NodeStat> {
+	async symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<NodeAttr> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -508,7 +511,7 @@ class IdbFs {
 		]);
 	}
 
-	async link(ino: number, newparent: number, newname: string): Promise<NodeStat> {
+	async link(ino: number, newparent: number, newname: string): Promise<NodeAttr> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
