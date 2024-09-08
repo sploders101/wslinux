@@ -99,7 +99,7 @@ export interface Chunk {
 	data: Uint8Array,
 }
 
-export interface NodeStat {
+export interface NodeAttr {
     ino: number,
     size: number,
     blocks: number,
