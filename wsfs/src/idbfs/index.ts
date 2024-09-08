@@ -70,7 +70,7 @@ function openIdbFs(name: string): Promise<IdbFs> {
  * Filesystem error to be returned via FUSE.
  * TODO: Extend with more specific options rather than normal error constructor.
  */
-class FsError extends Error { }
+export class FsError extends Error { }
 
 /** The size of each chunk */
 const defaultBlockSize = 512;

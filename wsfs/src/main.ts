@@ -1,6 +1,7 @@
 import './style.css'
 
 import { IdbFs, S_IFREG, openIdbFs } from "./idbfs";
+import { connectFilesystem } from './idbfs-connector';
 
 async function writeDemo(fs: IdbFs) {
 	const textContents = [
@@ -47,9 +48,21 @@ async function readDemo(fs: IdbFs) {
 		await writeDemo(fs);
 	}
 
-	const button = document.createElement("button");
-	button.innerText = "Open readme";
-	button.addEventListener("click", () => readDemo(fs));
-	document.body.appendChild(button);
-	
+	const testButton = document.createElement("button");
+	testButton.innerText = "Open readme";
+	testButton.addEventListener("click", () => readDemo(fs));
+	document.body.appendChild(testButton);
+
+	const wsButton = document.createElement("button");
+	wsButton.innerText = "Connect to server";
+	wsButton.addEventListener("click", async () => {
+		const ws = await new Promise<WebSocket>((res, rej) => {
+			const ws = new WebSocket("ws://10.3.0.221:3030/echo");
+			ws.addEventListener("open", () => res(ws));
+			ws.addEventListener("error", () => rej());
+		});
+		connectFilesystem(ws, fs);
+	});
+	document.body.appendChild(wsButton);
+
 })();
