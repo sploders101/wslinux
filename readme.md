@@ -70,12 +70,13 @@ even better since it would integrate with the existing system initramfs. I'll ha
 
 ## Todo
 
-| |                                          |
-|-|------------------------------------------|
-|✓|IndexedDB-backed filesystem in the browser|
-| |Rust-based FUSE connector                 |
-| |Initramfs & Arch install                  |
-| |Database preseed for distribution         |
+| |                                            |
+|-|--------------------------------------------|
+|✓| IndexedDB-backed filesystem in the browser |
+|o| JavaScript protocol & connector            |
+| | Rust-based FUSE connector                  |
+| | Initramfs & Arch install                   |
+| | Database preseed for distribution          |
 
 
 ## Organization
