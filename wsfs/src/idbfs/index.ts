@@ -1,5 +1,5 @@
 import { ObjStoreWrapper } from "./idbWrappers";
-import { AssignedInode, Chunk, FileType, FsStats, Inode, NodeAttr, ReaddirEntry } from "./types";
+import { Chunk, Entry, FileType, FsStats, Inode, NodeAttr, ReaddirEntry } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -104,7 +104,7 @@ class IdbFs {
 		this.dirCache = new Map();
 	}
 
-	async lookup(parent: number, name: string): Promise<{ attr: NodeAttr, generation: number }> {
+	async lookup(parent: number, name: string): Promise<Entry> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -293,7 +293,7 @@ class IdbFs {
 		mode: number,
 		umask: number,
 		rdev: number,
-	): Promise<AssignedInode> {
+	): Promise<Entry> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -378,11 +378,14 @@ class IdbFs {
 		parentInode.subdirs.set(name, inodeId);
 		parentInode.mtime = Date.now();
 		await inodeStore.put(parentInode);
-		return inode as AssignedInode;
+		return {
+			attr: await this.getattr(inodeId),
+			generation: inode.generation,
+		}
 	}
 
 	/** Create a new directory */
-	mkdir(uid: number, gid: number, parent: number, name: string, mode: number): Promise<AssignedInode> {
+	mkdir(uid: number, gid: number, parent: number, name: string, mode: number): Promise<Entry> {
 		return this.mknod(uid, gid, parent, name, (mode & (~S_IFMT)) | S_IFDIR, 0, 0);
 	}
 
@@ -437,7 +440,7 @@ class IdbFs {
 		return this.unlinkAny(parent, name, true);
 	}
 
-	async symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<NodeAttr> {
+	async symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<Entry> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -451,7 +454,7 @@ class IdbFs {
 
 		const now = Date.now();
 
-		const symlinkIno = await inodeStore.add({
+		const symlinkInode = {
 			type: FileType.Symlink,
 			parent,
 			lookups: 0,
@@ -465,16 +468,20 @@ class IdbFs {
 			uid,
 			xattrs: new Map(),
 			target,
-		});
+		} as const;
+		const symlinkIno = await inodeStore.add(symlinkInode);
 
 		parentInode.subdirs.set(linkName, symlinkIno);
 		parentInode.mtime = Date.now();
 		await inodeStore.put(parentInode);
 
-		return await this.getattr(symlinkIno);
+		return {
+			attr: await this.getattr(symlinkIno),
+			generation: symlinkInode.generation,
+		}
 	}
 
-	async rename(parent: number, name: string, newparent: number, newname: string): Promise<void> {
+	async rename(parent: number, name: string, newparent: number, newname: string, _flags: number): Promise<void> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -511,7 +518,7 @@ class IdbFs {
 		]);
 	}
 
-	async link(ino: number, newparent: number, newname: string): Promise<NodeAttr> {
+	async link(ino: number, newparent: number, newname: string): Promise<Entry> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
@@ -532,7 +539,10 @@ class IdbFs {
 
 		newparentInode.subdirs.set(newname, ino);
 
-		return await this.getattr(ino);
+		return {
+			attr: await this.getattr(ino),
+			generation: inode.generation,
+		}
 	}
 
 	async open(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {

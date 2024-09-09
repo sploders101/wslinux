@@ -99,6 +99,11 @@ export interface Chunk {
 	data: Uint8Array,
 }
 
+export interface Entry {
+	attr: NodeAttr,
+	generation: number,
+}
+
 export interface NodeAttr {
     ino: number,
     size: number,

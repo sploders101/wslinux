@@ -52,6 +52,8 @@ export const constants = {
 	},
 	replyTypes: {
 		empty: 0,
-		stat: 1,
+		entry: 1,
+		attr: 2,
+		data: 3,
 	}
 };
