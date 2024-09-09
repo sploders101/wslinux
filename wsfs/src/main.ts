@@ -39,6 +39,7 @@ async function readDemo(fs: IdbFs) {
 	if (readmeEntry !== null && (readmeEntry.attr.mode & S_IFMT) === S_IFREG) {
 		const { fh } = await fs.open(readmeEntry.attr.ino, 0);
 		const readmeData = await fs.read(readmeEntry.attr.ino, fh, 0, 512);
+		await fs.release(readmeEntry.attr.ino, fh, 0);
 		const decoder = new TextDecoder();
 		const decodedMessage = decoder.decode(readmeData);
 		alert(`Found readme.md on the filesystem! It contains the following data:\n\n${decodedMessage}`);
