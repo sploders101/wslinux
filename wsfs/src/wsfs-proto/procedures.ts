@@ -184,12 +184,12 @@ export async function read(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 
 export async function write(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
-    const ino = Number(data.u64());
-    const fh = Number(data.u64());
-    const offset = Number(data.i64());
-    const writeData = data.buffer();
-    const write_flags = data.u32();
-    const flags = data.i32();
+	const ino = Number(data.u64());
+	const fh = Number(data.u64());
+	const offset = Number(data.i64());
+	const writeData = data.buffer();
+	const write_flags = data.u32();
+	const flags = data.i32();
 
 	const bytesWritten = await fs.write(ino, fh, offset, writeData, write_flags, flags);
 	respond.write(ws, responseId, bytesWritten);
@@ -197,11 +197,11 @@ export async function write(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 
 export async function release(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
-    const ino = Number(data.u64());
-    const fh = Number(data.u64());
-    const flags = data.i32();
+	const ino = Number(data.u64());
+	const fh = Number(data.u64());
+	const flags = data.i32();
 
-    await fs.release(ino, fh, flags);
+	await fs.release(ino, fh, flags);
 	respond.empty(ws, responseId);
 }
 
@@ -226,10 +226,10 @@ export async function readdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 
 export async function releasedir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
-    const ino = Number(data.u64());
-    const fh = Number(data.u64());
-    const flags = data.i32();
+	const ino = Number(data.u64());
+	const fh = Number(data.u64());
+	const flags = data.i32();
 
-    await fs.releasedir(ino, fh, flags);
-    respond.empty(ws, responseId);
+	await fs.releasedir(ino, fh, flags);
+	respond.empty(ws, responseId);
 }

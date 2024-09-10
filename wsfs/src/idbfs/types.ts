@@ -105,30 +105,30 @@ export interface Entry {
 }
 
 export interface NodeAttr {
-    ino: number,
-    size: number,
-    blocks: number,
-    atimeMs: number,
-    mtimeMs: number,
-    ctimeMs: number,
-    crtimeMs: number,
-    mode: number,
-    nlink: number,
-    uid: number,
-    gid: number,
-    rdev: number,
-    blksize: number,
+	ino: number,
+	size: number,
+	blocks: number,
+	atimeMs: number,
+	mtimeMs: number,
+	ctimeMs: number,
+	crtimeMs: number,
+	mode: number,
+	nlink: number,
+	uid: number,
+	gid: number,
+	rdev: number,
+	blksize: number,
 }
 
 export interface FsStats {
 	blocks: number,
-    bfree: number,
-    bavail: number,
-    files: number,
-    ffree: number,
-    bsize: number,
-    namelen: number,
-    frsize: number
+	bfree: number,
+	bavail: number,
+	files: number,
+	ffree: number,
+	bsize: number,
+	namelen: number,
+	frsize: number
 }
 
 export interface ReaddirEntry {
