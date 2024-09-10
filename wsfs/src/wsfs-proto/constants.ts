@@ -55,6 +55,9 @@ export const constants = {
 		entry: 1,
 		attr: 2,
 		data: 3,
+		open: 4,
+		write: 5,
+		readdir: 6,
 	},
 	replyStates: {
 		success: 0,

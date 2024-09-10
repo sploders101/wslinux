@@ -160,3 +160,76 @@ export async function link(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const entry = await fs.link(ino, newParent, newName);
 	respond.entry(ws, responseId, entry);
 }
+
+export async function open(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const flags = data.i32();
+
+	const openResponse = await fs.open(ino, flags);
+	respond.open(ws, responseId, openResponse);
+}
+
+export async function read(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const fh = Number(data.u64());
+	const offset = Number(data.i64());
+	const size = data.u32();
+	const flags = data.i32();
+
+	const readData = await fs.read(ino, fh, offset, size, flags);
+	respond.data(ws, responseId, readData);
+}
+
+export async function write(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+    const ino = Number(data.u64());
+    const fh = Number(data.u64());
+    const offset = Number(data.i64());
+    const writeData = data.buffer();
+    const write_flags = data.u32();
+    const flags = data.i32();
+
+	const bytesWritten = await fs.write(ino, fh, offset, writeData, write_flags, flags);
+	respond.write(ws, responseId, bytesWritten);
+}
+
+export async function release(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+    const ino = Number(data.u64());
+    const fh = Number(data.u64());
+    const flags = data.i32();
+
+    await fs.release(ino, fh, flags);
+	respond.empty(ws, responseId);
+}
+
+export async function opendir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const flags = data.i32();
+
+	const openData = await fs.opendir(ino, flags);
+	respond.open(ws, responseId, openData);
+}
+
+export async function readdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const fh = Number(data.u64());
+	const offset = Number(data.i64());
+
+	const openData = await fs.readdir(ino, fh);
+	respond.readdir(ws, responseId, openData.slice(offset));
+}
+
+export async function releasedir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+    const ino = Number(data.u64());
+    const fh = Number(data.u64());
+    const flags = data.i32();
+
+    await fs.releasedir(ino, fh, flags);
+    respond.empty(ws, responseId);
+}

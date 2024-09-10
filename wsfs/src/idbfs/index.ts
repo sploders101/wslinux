@@ -570,6 +570,7 @@ class IdbFs {
 		_fh: number,
 		offset: number,
 		size: number,
+		_flags: number,
 	): Promise<Uint8Array> {
 		const transaction = this.db.transaction(["inodes", "chunks"], "readonly");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
@@ -616,6 +617,8 @@ class IdbFs {
 		_fh: number,
 		offset: number,
 		data: Uint8Array,
+		_write_flags: number,
+		_flags: number,
 	): Promise<number> {
 		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
