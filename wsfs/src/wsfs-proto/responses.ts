@@ -1,4 +1,4 @@
-import { Entry, NodeAttr } from "../idbfs/types";
+import { Entry, NodeAttr, ReaddirEntry } from "../idbfs/types";
 import { PacketBuilder } from "../packetizers";
 import { constants } from "./constants";
 
@@ -80,6 +80,45 @@ export function data(ws: WebSocket, responseId: number, data: string | Uint8Arra
 		packet.string(data);
 	} else {
 		packet.buffer(data);
+	}
+	ws.send(packet.getPacket());
+}
+
+export function open(ws: WebSocket, responseId: number, openResponse: { fh: number, flags: number }) {
+	const packet = new PacketBuilder();
+	packet.u8(constants.actions.internals);
+	packet.u8(constants.internals.reply);
+	packet.u8(constants.replyTypes.open);
+	packet.u16(responseId);
+	packet.i32(constants.replyStates.success);
+	packet.u64(BigInt(openResponse.fh));
+	packet.u32(openResponse.flags);
+	ws.send(packet.getPacket());
+}
+
+export function write(ws: WebSocket, responseId: number, bytesWritten: number) {
+	const packet = new PacketBuilder();
+	packet.u8(constants.actions.internals);
+	packet.u8(constants.internals.reply);
+	packet.u8(constants.replyTypes.write);
+	packet.u16(responseId);
+	packet.i32(constants.replyStates.success);
+	packet.u32(bytesWritten);
+	ws.send(packet.getPacket());
+}
+
+export function readdir(ws: WebSocket, responseId: number, openResponse: ReaddirEntry[]) {
+	const packet = new PacketBuilder();
+	packet.u8(constants.actions.internals);
+	packet.u8(constants.internals.reply);
+	packet.u8(constants.replyTypes.readdir);
+	packet.u16(responseId);
+	packet.i32(constants.replyStates.success);
+	packet.u16(openResponse.length);
+	for (const entry of openResponse) {
+		packet.u64(BigInt(entry.ino));
+		packet.u32(entry.type);
+		packet.string(entry.name);
 	}
 	ws.send(packet.getPacket());
 }
