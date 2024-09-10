@@ -55,5 +55,8 @@ export const constants = {
 		entry: 1,
 		attr: 2,
 		data: 3,
+	},
+	replyStates: {
+		success: 0,
 	}
 };
