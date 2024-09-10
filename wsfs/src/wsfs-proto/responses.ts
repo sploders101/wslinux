@@ -11,6 +11,7 @@ export async function empty(ws: WebSocket, responseId: number) {
 	packet.u8(constants.internals.reply);
 	packet.u8(constants.replyTypes.empty);
 	packet.u16(responseId);
+	packet.i32(constants.replyStates.success);
 	ws.send(packet.getPacket());
 }
 
@@ -23,6 +24,7 @@ export async function entry(ws: WebSocket, responseId: number, entry: Entry) {
     packet.u8(constants.internals.reply);
     packet.u8(constants.replyTypes.entry);
     packet.u16(responseId);
+    packet.i32(constants.replyStates.success);
     packet.u64(BigInt(entry.generation));
     packet.u64(BigInt(entry.attr.ino));
     packet.u64(BigInt(entry.attr.size));
@@ -49,6 +51,7 @@ export async function attr(ws: WebSocket, responseId: number, attr: NodeAttr) {
     packet.u8(constants.internals.reply);
     packet.u8(constants.replyTypes.attr);
     packet.u16(responseId);
+    packet.i32(constants.replyStates.success);
     packet.u64(BigInt(attr.ino));
     packet.u64(BigInt(attr.size));
     packet.u64(BigInt(attr.blocks));
@@ -71,6 +74,7 @@ export function data(ws: WebSocket, responseId: number, data: string | Uint8Arra
 	packet.u8(constants.internals.reply);
 	packet.u8(constants.replyTypes.data);
 	packet.u16(responseId);
+	packet.i32(constants.replyStates.success);
 
 	if (typeof data === "string") {
 		packet.string(data);
