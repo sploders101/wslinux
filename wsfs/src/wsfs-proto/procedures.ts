@@ -1,5 +1,7 @@
 import { IdbFs } from "../idbfs";
+import { ErrorCode } from "../idbfs/errors";
 import { PacketReader } from "../packetizers";
+import { constants } from "./constants";
 import * as respond from "./responses";
 
 export async function lookup(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -231,5 +233,77 @@ export async function releasedir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const flags = data.i32();
 
 	await fs.releasedir(ino, fh, flags);
+	respond.empty(ws, responseId);
+}
+
+export async function statfs(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+
+	const stats = await fs.statfs();
+	respond.statfs(ws, responseId, stats);
+}
+
+export async function setxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const name = data.string();
+	const value = data.buffer();
+	const flags = data.i32();
+	const position = data.u32();
+
+	await fs.setxattr(ino, name, value, flags, position);
+	respond.empty(ws, responseId);
+}
+
+export async function getxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const name = data.string();
+	const size = data.u32();
+
+	const value = await fs.getxattr(ino, name);
+	if (value.length === 0) {
+		respond.xattr(ws, responseId, value.length);
+	} else if (value.length <= size) {
+		respond.xattr(ws, responseId, value);
+	} else {
+		respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+	}
+}
+
+export async function listxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const size = data.u32();
+
+	const attributes = await fs.listxattr(ino);
+
+	if (size === 0) {
+		let keySize: number;
+		if (attributes.length === 0) {
+			keySize = 0;
+		} else {
+			keySize = attributes.reduce((prev, curr) => prev + curr.length, 0) + (attributes.length - 1);
+		}
+		respond.xattr(ws, responseId, keySize);
+	} else {
+		const catKeys = attributes.join("\0");
+		const catKeysBuf = new TextEncoder().encode(catKeys);
+
+		if (catKeysBuf.length <= size) {
+			respond.xattr(ws, responseId, catKeysBuf);
+		} else {
+			respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+		}
+	}
+}
+
+export async function removexattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
+	const responseId = data.u16();
+	const ino = Number(data.u64());
+	const name = data.string();
+
+	await fs.removexattr(ino, name);
+
 	respond.empty(ws, responseId);
 }
