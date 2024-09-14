@@ -58,8 +58,15 @@ export const constants = {
 		open: 4,
 		write: 5,
 		readdir: 6,
+		statfs: 7,
+		xattr: 8,
+		create: 9,
 	},
 	replyStates: {
 		success: 0,
-	}
+	},
+	xattrResponses: {
+		size: 0,
+		data: 1,
+	},
 };

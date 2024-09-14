@@ -53,11 +53,11 @@ export function connectFilesystem(ws: WebSocket, fs: IdbFs) {
 					case constants.actions.readdirplus: return;
 					case constants.actions.releasedir: return proc.releasedir(fs, ws, packet);
 					case constants.actions.fsyncdir: return;
-					case constants.actions.statfs: return;
-					case constants.actions.setxattr: return;
-					case constants.actions.getxattr: return;
-					case constants.actions.listxattr: return;
-					case constants.actions.removexattr: return;
+					case constants.actions.statfs: return proc.statfs(fs, ws, packet);
+					case constants.actions.setxattr: return proc.setxattr(fs, ws, packet);
+					case constants.actions.getxattr: return proc.getxattr(fs, ws, packet);
+					case constants.actions.listxattr: return proc.listxattr(fs, ws, packet);
+					case constants.actions.removexattr: return proc.removexattr(fs, ws, packet);
 					case constants.actions.access: return;
 					case constants.actions.create: return;
 					case constants.actions.getlk: return;

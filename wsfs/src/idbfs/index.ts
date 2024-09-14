@@ -757,6 +757,7 @@ class IdbFs {
 		name: string,
 		value: Uint8Array,
 		_flags: number,
+		_position: number,
 	): Promise<void> {
 		const transaction = this.db.transaction(["inodes"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
