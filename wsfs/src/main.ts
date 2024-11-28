@@ -20,9 +20,9 @@ async function writeDemo(fs: IdbFs) {
 
 	const file = await fs.mknod(0, 0, 1, "readme.md", S_IFREG | 0o0664, 0, 0);
 	const { fh } = await fs.open(file.attr.ino, 0);
-	const bytesWritten = await fs.write(file.attr.ino, fh, 0, contents);
+	const bytesWritten = await fs.write(file.attr.ino, fh, 0, contents, 0, 0);
 	console.log(`Wrote ${bytesWritten} bytes`);
-	const bytes = await fs.read(file.attr.ino, fh, 0, 512);
+	const bytes = await fs.read(file.attr.ino, fh, 0, 512, 0);
 	const decoder = new TextDecoder();
 	console.log(`Saved file and read it back:\n\n${decoder.decode(bytes)}`);
 	await fs.release(file.attr.ino, fh, 0);
@@ -38,7 +38,7 @@ async function readDemo(fs: IdbFs) {
 	}
 	if (readmeEntry !== null && (readmeEntry.attr.mode & S_IFMT) === S_IFREG) {
 		const { fh } = await fs.open(readmeEntry.attr.ino, 0);
-		const readmeData = await fs.read(readmeEntry.attr.ino, fh, 0, 512);
+		const readmeData = await fs.read(readmeEntry.attr.ino, fh, 0, 512, 0);
 		await fs.release(readmeEntry.attr.ino, fh, 0);
 		const decoder = new TextDecoder();
 		const decodedMessage = decoder.decode(readmeData);
