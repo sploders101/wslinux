@@ -1,16 +1,15 @@
+mod binary_packets;
 mod fuse_driver;
-
-use std::collections::HashMap;
+mod constants;
 
 use futures_util::{FutureExt, StreamExt};
-use lazy_static::lazy_static;
 use warp::Filter;
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
 
-    let ws_route = warp::path("echo")
+    let ws_route = warp::path("fshost")
         // The `ws()` filter will prepare the Websocket handshake.
         .and(warp::ws())
         .map(|ws: warp::ws::Ws| {

@@ -62,7 +62,7 @@ async function readDemo(fs: IdbFs) {
 	wsButton.innerText = "Connect to server";
 	wsButton.addEventListener("click", async () => {
 		const ws = await new Promise<WebSocket>((res, rej) => {
-			const ws = new WebSocket("ws://10.3.0.221:3030/echo");
+			const ws = new WebSocket("ws://127.0.0.1:3030/fshost");
 			ws.addEventListener("open", () => res(ws));
 			ws.addEventListener("error", () => rej());
 		});

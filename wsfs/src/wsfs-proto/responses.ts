@@ -8,10 +8,10 @@ function encodeAttr(packet: PacketBuilder, attr: NodeAttr) {
 	packet.u64(BigInt(attr.ino));
 	packet.u64(BigInt(attr.size));
 	packet.u64(BigInt(attr.blocks));
-	packet.u64(BigInt(attr.atimeMs));
-	packet.u64(BigInt(attr.mtimeMs));
-	packet.u64(BigInt(attr.ctimeMs));
-	packet.u64(BigInt(attr.crtimeMs));
+	packet.u64(BigInt(attr.atimeSecs));
+	packet.u64(BigInt(attr.mtimeSecs));
+	packet.u64(BigInt(attr.ctimeSecs));
+	packet.u64(BigInt(attr.crtimeSecs));
 	packet.u32(attr.mode);
 	packet.u32(attr.nlink);
 	packet.u32(attr.uid);
@@ -44,19 +44,7 @@ export async function entry(ws: WebSocket, responseId: number, entry: Entry) {
 	packet.u16(responseId);
 	packet.i32(constants.replyStates.success);
 	packet.u64(BigInt(entry.generation));
-	packet.u64(BigInt(entry.attr.ino));
-	packet.u64(BigInt(entry.attr.size));
-	packet.u64(BigInt(entry.attr.blocks));
-	packet.u64(BigInt(entry.attr.atimeMs));
-	packet.u64(BigInt(entry.attr.mtimeMs));
-	packet.u64(BigInt(entry.attr.ctimeMs));
-	packet.u64(BigInt(entry.attr.crtimeMs));
-	packet.u32(entry.attr.mode);
-	packet.u32(entry.attr.nlink);
-	packet.u32(entry.attr.uid);
-	packet.u32(entry.attr.gid);
-	packet.u32(entry.attr.rdev);
-	packet.u32(entry.attr.blksize);
+	encodeAttr(packet, entry.attr);
 	ws.send(packet.getPacket());
 }
 
