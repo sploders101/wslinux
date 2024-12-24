@@ -1,7 +1,8 @@
 use crate::binary_packets::{PacketReader, PacketWriter};
 use crate::constants;
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, TimeOrNow
+    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
+    ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, TimeOrNow,
 };
 use std::time::{Duration, SystemTime};
 
@@ -28,16 +29,16 @@ pub trait FsComms {
     fn get_available_rid(&self) -> u16;
 }
 
-fn type_from_mode(mode: libc::mode_t) -> FileType {
+fn type_from_mode(mode: libc::mode_t) -> Option<FileType> {
     return match mode & libc::S_IFMT {
-        libc::S_IFREG => FileType::RegularFile,
-        libc::S_IFBLK => FileType::BlockDevice,
-        libc::S_IFCHR => FileType::CharDevice,
-        libc::S_IFDIR => FileType::Directory,
-        libc::S_IFIFO => FileType::NamedPipe,
-        libc::S_IFLNK => FileType::Symlink,
-        libc::S_IFSOCK => FileType::Socket,
-        _ => unimplemented!(),
+        libc::S_IFREG => Some(FileType::RegularFile),
+        libc::S_IFBLK => Some(FileType::BlockDevice),
+        libc::S_IFCHR => Some(FileType::CharDevice),
+        libc::S_IFDIR => Some(FileType::Directory),
+        libc::S_IFIFO => Some(FileType::NamedPipe),
+        libc::S_IFLNK => Some(FileType::Symlink),
+        libc::S_IFSOCK => Some(FileType::Socket),
+        _ => None,
     };
 }
 
@@ -56,7 +57,7 @@ fn decode_attr(packet: &mut PacketReader) -> Option<FileAttr> {
     let rdev = packet.read_u32()?;
     let blksize = packet.read_u32()?;
 
-    let kind = type_from_mode(mode);
+    let kind = type_from_mode(mode).expect("Missing kind from mode");
     let perm = (mode & !libc::S_IFMT) as u16;
 
     return Some(FileAttr {
@@ -99,10 +100,10 @@ impl FsCallback {
                 if error_code != 0 {
                     reply.error(error_code);
                 } else {
-                	let attr = decode_attr(&mut packet)?;
-                	let generation = packet.read_u64()?;
-                	let fh = packet.read_u64()?;
-                	let flags = packet.read_u32()?;
+                    let attr = decode_attr(&mut packet)?;
+                    let generation = packet.read_u64()?;
+                    let fh = packet.read_u64()?;
+                    let flags = packet.read_u32()?;
                     reply.created(&Duration::from_secs(0), &attr, generation, fh, flags);
                 }
             }
@@ -117,9 +118,9 @@ impl FsCallback {
                 if error_code != 0 {
                     reply.error(error_code);
                 } else {
-                	let generation = packet.read_u64()?;
-                	let attr = decode_attr(&mut packet)?;
-                	reply.entry(&Duration::from_secs(0), &attr, generation);
+                    let generation = packet.read_u64()?;
+                    let attr = decode_attr(&mut packet)?;
+                    reply.entry(&Duration::from_secs(0), &attr, generation);
                 }
             }
             Self::ReplyAttr(reply) => {
@@ -142,9 +143,9 @@ impl FsCallback {
                 if error_code != 0 {
                     reply.error(error_code);
                 } else {
-                	let fh = packet.read_u64()?;
-                	let flags = packet.read_u32()?;
-                	reply.opened(fh, flags);
+                    let fh = packet.read_u64()?;
+                    let flags = packet.read_u32()?;
+                    reply.opened(fh, flags);
                 }
             }
             Self::ReplyWrite(reply) => {
@@ -163,9 +164,11 @@ impl FsCallback {
 
                     for i in 0..response_length {
                         let ino = packet.read_u64()?;
-                        let file_type = type_from_mode(packet.read_u32()?);
+                        let file_type = type_from_mode(packet.read_u32()?)
+                            .expect("Cannot get mode while listing directory");
                         let name = packet.read_str()?.ok()?;
-                        if reply.add(ino, i as i64, file_type, name) {
+                        println!("Adding {ino} to dirlist");
+                        if reply.add(ino, (i as i64) + 1, file_type, name) {
                             break;
                         }
                     }
@@ -177,15 +180,15 @@ impl FsCallback {
                 if error_code != 0 {
                     reply.error(error_code);
                 } else {
-                	let blocks = packet.read_u64()?;
-                	let bfree = packet.read_u64()?;
-                	let bavail = packet.read_u64()?;
-                	let files = packet.read_u64()?;
-                	let ffree = packet.read_u64()?;
-                	let bsize = packet.read_u32()?;
-                	let namelen = packet.read_u32()?;
-                	let frsize = packet.read_u32()?;
-                	reply.statfs(blocks, bfree, bavail, files, ffree, bsize, namelen, frsize);
+                    let blocks = packet.read_u64()?;
+                    let bfree = packet.read_u64()?;
+                    let bavail = packet.read_u64()?;
+                    let files = packet.read_u64()?;
+                    let ffree = packet.read_u64()?;
+                    let bsize = packet.read_u32()?;
+                    let namelen = packet.read_u32()?;
+                    let frsize = packet.read_u32()?;
+                    reply.statfs(blocks, bfree, bavail, files, ffree, bsize, namelen, frsize);
                 }
             }
             Self::ReplyXattr(reply) => {
@@ -218,8 +221,14 @@ impl FsCallback {
 /// is implemented entirely using Web technologies such as IndexedDB and WebSockets
 /// so it can run in your browser. This component is the "glue" that bridges FUSE
 /// requests and the websocket.
-struct Wsfs<T: FsComms> {
+pub struct Wsfs<T: FsComms> {
     comms: T,
+}
+
+impl<T: FsComms> Wsfs<T> {
+    pub fn new(inner: T) -> Self {
+        return Wsfs { comms: inner };
+    }
 }
 
 impl<T: FsComms> Filesystem for Wsfs<T> {
@@ -380,6 +389,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::MKDIR);
         packet.write_u16(response_id);
         packet.write_u32(req.uid());
         packet.write_u32(req.gid());
@@ -402,6 +412,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::UNLINK);
         packet.write_u16(response_id);
         packet.write_u64(parent);
         packet.write_str(name.to_str().unwrap()).unwrap();
@@ -421,6 +432,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::RMDIR);
         packet.write_u16(response_id);
         packet.write_u64(parent);
         packet.write_str(name.to_str().unwrap()).unwrap();
@@ -441,6 +453,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::SYMLINK);
         packet.write_u16(response_id);
         packet.write_u32(req.uid());
         packet.write_u32(req.gid());
@@ -466,6 +479,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::RENAME);
         packet.write_u16(response_id);
         packet.write_u64(parent);
         packet.write_str(name.to_str().unwrap()).unwrap();
@@ -489,6 +503,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::LINK);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(newparent);
@@ -503,6 +518,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::OPEN);
         // const responseId = data.u16();
         packet.write_u16(response_id);
         // const ino = Number(data.u64());
@@ -529,6 +545,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::READ);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(fh);
@@ -556,6 +573,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::WRITE);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(fh);
@@ -582,6 +600,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::RELEASE);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(fh);
@@ -593,9 +612,11 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
     }
 
     fn opendir(&mut self, _req: &fuser::Request<'_>, ino: u64, flags: i32, reply: ReplyOpen) {
+        println!("Opening dir {ino}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::OPENDIR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_i32(flags);
@@ -613,9 +634,11 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         offset: i64,
         reply: fuser::ReplyDirectory,
     ) {
+        println!("Reading dir {ino}, offset {offset}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::READDIR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(fh);
@@ -634,9 +657,11 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         flags: i32,
         reply: ReplyEmpty,
     ) {
+        println!("Closing dir {ino}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::RELEASEDIR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u64(fh);
@@ -651,6 +676,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::STATFS);
         packet.write_u16(response_id);
 
         self.comms
@@ -671,6 +697,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::SETXATTR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_str(name.to_str().unwrap()).unwrap();
@@ -694,6 +721,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::GETXATTR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_str(name.to_str().unwrap()).unwrap();
@@ -708,6 +736,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::LISTXATTR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_u32(size);
@@ -727,6 +756,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
+        packet.write_u8(constants::actions::REMOVEXATTR);
         packet.write_u16(response_id);
         packet.write_u64(ino);
         packet.write_str(name.to_str().unwrap()).unwrap();

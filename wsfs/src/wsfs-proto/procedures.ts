@@ -1,4 +1,4 @@
-import { IdbFs } from "../idbfs";
+import { FsError, IdbFs } from "../idbfs";
 import { ErrorCode } from "../idbfs/errors";
 import { PacketReader } from "../packetizers";
 import { constants } from "./constants";
@@ -9,8 +9,16 @@ export async function lookup(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const parent = Number(data.u64());
 	const name = data.string();
 
-	const entry = await fs.lookup(parent, name);
-	respond.entry(ws, responseId, entry);
+	try {
+		const entry = await fs.lookup(parent, name);
+		respond.entry(ws, responseId, entry);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function forget(fs: IdbFs, data: PacketReader) {
@@ -28,8 +36,17 @@ export async function getattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
 	const ino = Number(data.u64());
 
-	const attr = await fs.getattr(ino);
-	respond.attr(ws, responseId, attr);
+
+	try {
+		const attr = await fs.getattr(ino);
+		respond.attr(ws, responseId, attr);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function setattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -73,16 +90,32 @@ export async function setattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 		nextType = data.u8();
 	}
 
-	const attr = await fs.setattr(ino, mode, uid, gid, size, mtimeMs, ctimeMs, crtimeMs);
-	respond.attr(ws, responseId, attr);
+	try {
+		const attr = await fs.setattr(ino, mode, uid, gid, size, mtimeMs, ctimeMs, crtimeMs);
+		respond.attr(ws, responseId, attr);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function readlink(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
 	const ino = Number(data.u64());
 
-	const target = await fs.readlink(ino);
-	respond.data(ws, responseId, target);
+	try {
+		const target = await fs.readlink(ino);
+		respond.data(ws, responseId, target);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function mknod(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -95,8 +128,16 @@ export async function mknod(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const umask = data.u32();
 	const rdev = data.u32();
 
-	const entry = await fs.mknod(uid, gid, parentIno, name, mode, umask, rdev);
-	respond.entry(ws, responseId, entry);
+	try {
+		const entry = await fs.mknod(uid, gid, parentIno, name, mode, umask, rdev);
+		respond.entry(ws, responseId, entry);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function mkdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -107,8 +148,16 @@ export async function mkdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const name = data.string();
 	const mode = data.u32();
 
-	const entry = await fs.mkdir(uid, gid, parentIno, name, mode);
-	respond.entry(ws, responseId, entry);
+	try {
+		const entry = await fs.mkdir(uid, gid, parentIno, name, mode);
+		respond.entry(ws, responseId, entry);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function unlink(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -116,8 +165,16 @@ export async function unlink(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const parentIno = Number(data.u64());
 	const name = data.string();
 
-	await fs.unlink(parentIno, name);
-	respond.empty(ws, responseId);
+	try {
+		await fs.unlink(parentIno, name);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function rmdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -125,8 +182,16 @@ export async function rmdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const parentIno = Number(data.u64());
 	const name = data.string();
 
-	await fs.rmdir(parentIno, name);
-	respond.empty(ws, responseId);
+	try {
+		await fs.rmdir(parentIno, name);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function symlink(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -137,8 +202,16 @@ export async function symlink(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const name = data.string();
 	const target = data.string();
 
-	const entry = await fs.symlink(uid, gid, parentIno, name, target);
-	respond.entry(ws, responseId, entry);
+	try {
+		const entry = await fs.symlink(uid, gid, parentIno, name, target);
+		respond.entry(ws, responseId, entry);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function rename(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -149,8 +222,16 @@ export async function rename(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const newName = data.string();
 	const flags = data.u32(); // Reserved. May need it later
 
-	await fs.rename(parent, name, newParent, newName, flags);
-	respond.empty(ws, responseId);
+	try {
+		await fs.rename(parent, name, newParent, newName, flags);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function link(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -159,8 +240,16 @@ export async function link(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const newParent = Number(data.u64());
 	const newName = data.string();
 
-	const entry = await fs.link(ino, newParent, newName);
-	respond.entry(ws, responseId, entry);
+	try {
+		const entry = await fs.link(ino, newParent, newName);
+		respond.entry(ws, responseId, entry);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function open(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -168,8 +257,16 @@ export async function open(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const ino = Number(data.u64());
 	const flags = data.i32();
 
-	const openResponse = await fs.open(ino, flags);
-	respond.open(ws, responseId, openResponse);
+	try {
+		const openResponse = await fs.open(ino, flags);
+		respond.open(ws, responseId, openResponse);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function read(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -180,8 +277,16 @@ export async function read(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const size = data.u32();
 	const flags = data.i32();
 
-	const readData = await fs.read(ino, fh, offset, size, flags);
-	respond.data(ws, responseId, readData);
+	try {
+		const readData = await fs.read(ino, fh, offset, size, flags);
+		respond.data(ws, responseId, readData);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function write(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -193,8 +298,16 @@ export async function write(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const write_flags = data.u32();
 	const flags = data.i32();
 
-	const bytesWritten = await fs.write(ino, fh, offset, writeData, write_flags, flags);
-	respond.write(ws, responseId, bytesWritten);
+	try {
+		const bytesWritten = await fs.write(ino, fh, offset, writeData, write_flags, flags);
+		respond.write(ws, responseId, bytesWritten);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function release(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -203,8 +316,16 @@ export async function release(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const fh = Number(data.u64());
 	const flags = data.i32();
 
-	await fs.release(ino, fh, flags);
-	respond.empty(ws, responseId);
+	try {
+		await fs.release(ino, fh, flags);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function opendir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -212,8 +333,16 @@ export async function opendir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const ino = Number(data.u64());
 	const flags = data.i32();
 
-	const openData = await fs.opendir(ino, flags);
-	respond.open(ws, responseId, openData);
+	try {
+		const openData = await fs.opendir(ino, flags);
+		respond.open(ws, responseId, openData);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function readdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -222,8 +351,16 @@ export async function readdir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const fh = Number(data.u64());
 	const offset = Number(data.i64());
 
-	const openData = await fs.readdir(ino, fh);
-	respond.readdir(ws, responseId, openData.slice(offset));
+	try {
+		const openData = await fs.readdir(ino, fh);
+		respond.readdir(ws, responseId, openData.slice(offset));
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function releasedir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -232,15 +369,31 @@ export async function releasedir(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const fh = Number(data.u64());
 	const flags = data.i32();
 
-	await fs.releasedir(ino, fh, flags);
-	respond.empty(ws, responseId);
+	try {
+		await fs.releasedir(ino, fh, flags);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function statfs(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const responseId = data.u16();
 
-	const stats = await fs.statfs();
-	respond.statfs(ws, responseId, stats);
+	try {
+		const stats = await fs.statfs();
+		respond.statfs(ws, responseId, stats);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function setxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -251,8 +404,16 @@ export async function setxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const flags = data.i32();
 	const position = data.u32();
 
-	await fs.setxattr(ino, name, value, flags, position);
-	respond.empty(ws, responseId);
+	try {
+		await fs.setxattr(ino, name, value, flags, position);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export async function getxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
@@ -261,13 +422,21 @@ export async function getxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const name = data.string();
 	const size = data.u32();
 
-	const value = await fs.getxattr(ino, name);
-	if (value.length === 0) {
-		respond.xattr(ws, responseId, value.length);
-	} else if (value.length <= size) {
-		respond.xattr(ws, responseId, value);
-	} else {
-		respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+	try {
+		const value = await fs.getxattr(ino, name);
+		if (value.length === 0) {
+			respond.xattr(ws, responseId, value.length);
+		} else if (value.length <= size) {
+			respond.xattr(ws, responseId, value);
+		} else {
+			respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+		}
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
 	}
 }
 
@@ -276,24 +445,32 @@ export async function listxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	const ino = Number(data.u64());
 	const size = data.u32();
 
-	const attributes = await fs.listxattr(ino);
+	try {
+		const attributes = await fs.listxattr(ino);
 
-	if (size === 0) {
-		let keySize: number;
-		if (attributes.length === 0) {
-			keySize = 0;
+		if (size === 0) {
+			let keySize: number;
+			if (attributes.length === 0) {
+				keySize = 0;
+			} else {
+				keySize = attributes.reduce((prev, curr) => prev + curr.length, 0) + (attributes.length - 1);
+			}
+			respond.xattr(ws, responseId, keySize);
 		} else {
-			keySize = attributes.reduce((prev, curr) => prev + curr.length, 0) + (attributes.length - 1);
+			const catKeys = attributes.join("\0");
+			const catKeysBuf = new TextEncoder().encode(catKeys);
+
+			if (catKeysBuf.length <= size) {
+				respond.xattr(ws, responseId, catKeysBuf);
+			} else {
+				respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+			}
 		}
-		respond.xattr(ws, responseId, keySize);
-	} else {
-		const catKeys = attributes.join("\0");
-		const catKeysBuf = new TextEncoder().encode(catKeys);
-
-		if (catKeysBuf.length <= size) {
-			respond.xattr(ws, responseId, catKeysBuf);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
 		} else {
-			respond.error(ws, responseId, constants.replyTypes.xattr, ErrorCode.ERANGE);
+			throw err;
 		}
 	}
 }
@@ -303,7 +480,14 @@ export async function removexattr(fs: IdbFs, ws: WebSocket, data: PacketReader) 
 	const ino = Number(data.u64());
 	const name = data.string();
 
-	await fs.removexattr(ino, name);
-
-	respond.empty(ws, responseId);
+	try {
+		await fs.removexattr(ino, name);
+		respond.empty(ws, responseId);
+	} catch (err) {
+		if (err instanceof FsError && err.code !== null) {
+			respond.error(ws, responseId, 0, err.code);
+		} else {
+			throw err;
+		}
+	}
 }

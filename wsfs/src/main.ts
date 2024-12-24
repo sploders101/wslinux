@@ -1,6 +1,6 @@
 import './style.css'
 
-import { IdbFs, S_IFMT, S_IFREG, openIdbFs } from "./idbfs";
+import { IdbFs, S_IFDIR, S_IFMT, S_IFREG, openIdbFs } from "./idbfs";
 import { connectFilesystem } from './idbfs-connector';
 import { Entry } from './idbfs/types';
 
@@ -62,7 +62,7 @@ async function readDemo(fs: IdbFs) {
 	wsButton.innerText = "Connect to server";
 	wsButton.addEventListener("click", async () => {
 		const ws = await new Promise<WebSocket>((res, rej) => {
-			const ws = new WebSocket("ws://127.0.0.1:3030/fshost");
+			const ws = new WebSocket("wss://127.0.0.1:3030/fshost");
 			ws.addEventListener("open", () => res(ws));
 			ws.addEventListener("error", () => rej());
 		});

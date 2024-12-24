@@ -49,7 +49,7 @@ export class PacketBuilder {
 	u64(value: bigint) {
 		this._alloc(8);
 		this._dv.setBigUint64(this._cursor, value, false);
-		this._cursor += 4;
+		this._cursor += 8;
 	}
 	i8(value: number) {
 		this._alloc(1);
@@ -69,7 +69,7 @@ export class PacketBuilder {
 	i64(value: bigint) {
 		this._alloc(8);
 		this._dv.setBigInt64(this._cursor, value, false);
-		this._cursor += 4;
+		this._cursor += 8;
 	}
 
 	buffer(value: Uint8Array) {

@@ -29,9 +29,9 @@ function openIdbFs(name: string): Promise<IdbFs> {
 				ctime: now,
 				crtime: now,
 				mtime: now,
-				uid: 0,
-				gid: 0,
-				mode: 0o755,
+				uid: 1000,
+				gid: 1000,
+				mode: S_IFREG | 0o755,
 				xattrs: new Map(),
 			});
 			inodes.add({
@@ -40,13 +40,13 @@ function openIdbFs(name: string): Promise<IdbFs> {
 				lookups: 0,
 				deleted: false,
 				generation: gengen(),
-				parent: 1, // `/../` is the same as `/`
+				parent: 0, // 0 is reserved to be handled by the kernel
 				ctime: now,
 				crtime: now,
 				mtime: now,
-				uid: 0,
-				gid: 0,
-				mode: 0o755,
+				uid: 1000,
+				gid: 1000,
+				mode: S_IFDIR | 0o755,
 				subdirs: new Map(),
 				xattrs: new Map(),
 			});
@@ -66,11 +66,70 @@ function openIdbFs(name: string): Promise<IdbFs> {
 	});
 }
 
+const EPERM = 1;
+const ENOENT = 2;
+const ESRCH = 3;
+const EINTR = 4;
+const EIO = 5;
+const ENXIO = 6;
+const E2BIG = 7;
+const ENOEXEC = 8;
+const EBADF = 9;
+const ECHILD = 10;
+const EAGAIN = 11;
+const ENOMEM = 12;
+const EACCES = 13;
+const EFAULT = 14;
+const ENOTBLK = 15;
+const EBUSY = 16;
+const EEXIST = 17;
+const EXDEV = 18;
+const ENODEV = 19;
+const ENOTDIR = 20;
+const EISDIR = 21;
+const EINVAL = 22;
+const ENFILE = 23;
+const EMFILE = 24;
+const ENOTTY = 25;
+const ETXTBSY = 26;
+const EFBIG = 27;
+const ENOSPC = 28;
+const ESPIPE = 29;
+const EROFS = 30;
+const EMLINK = 31;
+const EPIPE = 32;
+const EDOM = 33;
+const ERANGE = 34;
+const EWOULDBLOCK = EAGAIN;
+const ENOTEMPTY = 66;
+const ENODATA = 96;
+
+const errorMap: Record<string, number> = {
+	"No such file or directory": ENOENT,
+	"Bad file descriptor": EBADF,
+	"File or directory already exists": EEXIST,
+	"Not a symlink": EBADF,
+	"Cannot unlink directory": EISDIR,
+	"Cannot delete non-empty directory": ENOTEMPTY,
+	"Missing chunk. Inode consistency issue": EIO,
+	"File already exists": EEXIST,
+	"Can only open files": EIO, // TODO
+	"Can only hard-link regular files": EIO, // TODO
+	"No such attribute": ENODATA,
+};
+
 /**
  * Filesystem error to be returned via FUSE.
  * TODO: Extend with more specific options rather than normal error constructor.
  */
-export class FsError extends Error { }
+export class FsError extends Error {
+	code: number | null;
+
+	constructor(message: string) {
+		super(message);
+		this.code = errorMap[message] || null;
+	}
+}
 
 /** The size of each chunk */
 const defaultBlockSize = 512;
@@ -212,8 +271,7 @@ class IdbFs {
 	}
 
 	/** Sets a file's length. Locks chunk database. Do not call if you've already locked chunk database!!! */
-	private async truncate(inode: Inode, size: number): Promise<void> {
-		const transaction = this.db.transaction(["chunks"], "readwrite");
+	private async truncate(inode: Inode, size: number, transaction: IDBTransaction): Promise<void> {
 		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 		if (inode.type !== FileType.File) {
@@ -253,7 +311,7 @@ class IdbFs {
 		ctimeMs: number | null,
 		crtimeMs: number | null,
 	): Promise<NodeAttr> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
+		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 		const inode = await inodeStore.get(ino);
@@ -264,7 +322,7 @@ class IdbFs {
 		if (mode !== null) inode.mode = mode;
 		if (uid !== null) inode.uid = uid;
 		if (gid !== null) inode.gid = gid;
-		if (size !== null && inode.type === FileType.File) await this.truncate(inode, size);
+		if (size !== null && inode.type === FileType.File) await this.truncate(inode, size, transaction);
 		if (mtimeMs !== null) inode.mtime = mtimeMs;
 		if (ctimeMs !== null) inode.ctime = ctimeMs;
 		if (crtimeMs !== null) inode.crtime = crtimeMs;
@@ -498,7 +556,12 @@ class IdbFs {
 			throw new FsError("No such file or directory");
 		}
 
-		const newparentInode = await inodeStore.get(newparent);
+		let newparentInode: (Inode & { id: number }) | undefined;
+		if (newparent === parent) {
+			newparentInode = parentInode;
+		} else {
+			newparentInode = await inodeStore.get(newparent);
+		}
 		if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
 			throw new FsError("No such file or directory");
 		}
@@ -512,10 +575,10 @@ class IdbFs {
 		parentInode.mtime = time;
 		newparentInode.subdirs.set(newname, ino);
 		newparentInode.mtime = time;
-		await Promise.all([
-			inodeStore.put(parentInode),
-			inodeStore.put(newparentInode),
-		]);
+		await inodeStore.put(parentInode);
+		if (newparent !== parent) {
+			await inodeStore.put(newparentInode);
+		}
 	}
 
 	async link(ino: number, newparent: number, newname: string): Promise<Entry> {
@@ -708,6 +771,16 @@ class IdbFs {
 		while (this.dirCache.has(key)) key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
 
 		const subdirListing: ReaddirEntry[] = [];
+		subdirListing.push({
+			ino: 1,
+			name: ".",
+			type: S_IFDIR,
+		});
+		subdirListing.push({
+			ino: 1,
+			name: "..",
+			type: S_IFDIR,
+		});
 		for (const [subdirName, subdirIno] of inode.subdirs.entries()) {
 			const subdirInode = await inodeStore.get(subdirIno);
 			if (subdirInode === undefined) continue;

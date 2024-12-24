@@ -1,4 +1,4 @@
-import { IdbFs } from "./idbfs";
+import { FsError, IdbFs } from "./idbfs";
 import { PacketReader } from "./packetizers";
 import { constants } from "./wsfs-proto/constants";
 import * as proc from "./wsfs-proto/procedures";
