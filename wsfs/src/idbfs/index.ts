@@ -800,10 +800,12 @@ class IdbFs {
 
 	async statfs(): Promise<FsStats> {
 		const stats = await navigator.storage.estimate();
+		let quotaBlocks = Math.floor((stats.quota || 0) / this.blockSize);
+		let usageBlocks = Math.floor((stats.usage || 0) / this.blockSize);
 		return {
-			blocks: (stats.quota || 0) / this.blockSize,
-			bfree: (stats.quota || 0) - (stats.usage || 0),
-			bavail: (stats.quota || 0) - (stats.usage || 0),
+			blocks: quotaBlocks,
+			bfree: quotaBlocks - usageBlocks,
+			bavail: quotaBlocks - usageBlocks,
 			files: 0, // TODO
 			ffree: 0, // TODO
 			bsize: this.blockSize,
