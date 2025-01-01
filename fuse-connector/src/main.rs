@@ -8,6 +8,7 @@ use binary_packets::PacketReader;
 use fuse_driver::{FsCallback, FsComms, Wsfs};
 use fuser::{BackgroundSession, MountOption};
 use futures_util::{SinkExt, StreamExt};
+use qrcode::QrCode;
 use tokio::{
     select,
     sync::{
@@ -25,10 +26,9 @@ async fn main() {
         // The `ws()` filter will prepare the Websocket handshake.
         .and(warp::ws())
         .map(|ws: warp::ws::Ws| {
-            println!("Got connection");
             // And then our closure will be called when it completes...
             ws.on_upgrade(|mut websocket| async move {
-                println!("Upgraded connection");
+                println!("Connection established. Mounting filesystem.");
                 let mut message_handler = WsMessageHandler::new();
                 loop {
                     select! {
@@ -54,18 +54,26 @@ async fn main() {
     // Redir route gives the user the opportunity to accept the invalid
     // TLS certificate, which allows the github pages code to open a
     // WebSocket here
-    let redir_route = warp::path::end().and(warp::get()).map(|| {
-        println!("Redirect");
-        warp::reply::with_header(
-            warp::http::StatusCode::TEMPORARY_REDIRECT,
-            "Location",
-            if cfg!(debug_assertions) {
-                "http://127.0.0.1:5173"
-            } else {
-                "https://sploders101.github.io/wslinux"
-            },
-        )
-    });
+    let redir_route = warp::path::end()
+        .and(warp::get())
+        .and(warp::filters::host::optional())
+        .map(|host| {
+            println!("Client trusted certificate. Redirect issued.");
+            match host {
+                Some(host) => warp::reply::with_header(
+                    warp::http::StatusCode::TEMPORARY_REDIRECT,
+                    "Location",
+                    if cfg!(debug_assertions) {
+                        String::from("http://127.0.0.1:5173")
+                    } else {
+                        format!("https://sploders101.github.io/wslinux#{host}")
+                    },
+                ),
+                None => panic!("Missing :authority header"),
+            }
+        });
+
+    print_qr();
 
     warp::serve(redir_route.or(ws_route))
         .tls()
@@ -73,6 +81,35 @@ async fn main() {
         .key(include_bytes!("../data/key.pem"))
         .run(([0, 0, 0, 0], 3030))
         .await;
+}
+
+fn print_qr() {
+    let interface = pnet::datalink::interfaces()
+        .into_iter()
+        .inspect(|interface| {
+            // Print the interfaces we find for the user's convenience
+            if interface.is_up() {
+                for ip in interface.ips.iter() {
+                    println!("{}: {}", &interface.name, ip);
+                }
+            }
+        })
+        .find(|iface| iface.is_up() && !iface.is_loopback() && !iface.ips.is_empty());
+
+    if let Some(interface) = interface {
+        if let Some(ipnet) = interface.ips.get(0) {
+            if let Ok(qrcode) = QrCode::new(format!("https://{}:3030/", ipnet.ip())) {
+                let image = qrcode
+                    .render()
+                    .dark_color(qrcode::render::unicode::Dense1x2::Dark)
+                    .light_color(qrcode::render::unicode::Dense1x2::Light)
+                    .build();
+                println!("{}", image);
+                return;
+            }
+        }
+    }
+    println!("Error while finding the default interface. Could not print QR code.");
 }
 
 struct WsMessageHandler {
