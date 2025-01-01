@@ -8,6 +8,13 @@ I want to talk about it."
 
 **Challenge accepted.**
 
+## Current Status
+
+I haven't had a lot of time to work on it lately, but the project *has* been moving, and this commit marks the first
+time I think it's ready for a live test. As I'm writing this, I am installing libvirt so that I can spin up a VM and
+attempt to install Arch Linux to my web browser. If I am able to do this successfully, I will set up a build process
+in CI to generate a bootstrap database capable of booting Arch Linux!
+
 
 ## My thought process
 
