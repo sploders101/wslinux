@@ -424,7 +424,7 @@ export async function getxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 
 	try {
 		const value = await fs.getxattr(ino, name);
-		if (value.length === 0) {
+		if (size === 0) {
 			respond.xattr(ws, responseId, value.length);
 		} else if (value.length <= size) {
 			respond.xattr(ws, responseId, value);
