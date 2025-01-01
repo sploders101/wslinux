@@ -167,7 +167,6 @@ impl FsCallback {
                         let file_type = type_from_mode(packet.read_u32()?)
                             .expect("Cannot get mode while listing directory");
                         let name = packet.read_str()?.ok()?;
-                        println!("Adding {ino} to dirlist");
                         if reply.add(ino, (i as i64) + 1, file_type, name) {
                             break;
                         }
@@ -612,7 +611,6 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
     }
 
     fn opendir(&mut self, _req: &fuser::Request<'_>, ino: u64, flags: i32, reply: ReplyOpen) {
-        println!("Opening dir {ino}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
@@ -634,7 +632,6 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         offset: i64,
         reply: fuser::ReplyDirectory,
     ) {
-        println!("Reading dir {ino}, offset {offset}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
@@ -657,7 +654,6 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         flags: i32,
         reply: ReplyEmpty,
     ) {
-        println!("Closing dir {ino}");
         let response_id = self.comms.get_available_rid();
         let mut packet = PacketWriter::new();
 
