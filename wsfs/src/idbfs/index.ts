@@ -650,29 +650,31 @@ class IdbFs {
 		const availableSize = inode.chunks.length * inode.chunksize - inode.trim - offset;
 		size = Math.min(availableSize, size);
 
+		const fileLength = inode.chunks.length * inode.chunksize - inode.trim;
 		const destBuf = new Uint8Array(size);
-		let copiedBytes = 0;
-		while (copiedBytes < size) {
-			const startByte = offset + copiedBytes;
-			const startChunkIdx = Math.floor(startByte / inode.chunksize);
-			const startSubIdx = startByte % inode.chunksize;
-			const endSubIdx = Math.min(size - copiedBytes, inode.chunksize);
-			const chunkId = inode.chunks[startChunkIdx];
-			let chunk;
+		let cursor = 0;
+		while (cursor < size) {
+			let fileOffset = cursor + offset;
+			let chunkIdx = Math.floor(fileOffset / inode.chunksize);
+			let chunkId = inode.chunks[chunkIdx];
+			let chunkOffset = (cursor + offset) % inode.chunksize;
+
+			let chunk: Uint8Array;
 			if (chunkId === -1) {
-				// Sparse files
-				chunk = { id: inode.chunks[startChunkIdx], data: new Uint8Array(inode.chunksize) };
+				chunk = new Uint8Array(inode.chunksize);
+			} else if (chunkId === undefined) {
+				break;
 			} else {
-				chunk = await chunkStore.get(chunkId);
-				if (chunk === undefined) {
-					throw new FsError("Missing chunk. Inode inconsistency issue.");
-				}
+				let thisChunk = await chunkStore.get(chunkId);
+				if (thisChunk === undefined) throw new Error("Filesystem inconsistency error.");
+				chunk = thisChunk.data;
 			}
-			destBuf.set(chunk.data.slice(startSubIdx, endSubIdx), copiedBytes);
-			copiedBytes += endSubIdx - startSubIdx;
+			let writeLength = Math.min(chunk.length, fileLength - cursor);
+			destBuf.set(chunk.slice(0, writeLength), cursor);
+			cursor += inode.chunksize - chunkOffset;
 		}
 
-		return destBuf;
+		return destBuf.slice(0, Math.max(0, fileLength - offset));
 	}
 
 	async write(
@@ -695,47 +697,32 @@ class IdbFs {
 			throw new FsError("Can only open files");
 		}
 
-		let cursor = offset;
-		const endAt = offset + data.length;
-		while (cursor < endAt) {
-			// Weird math. Probably want to simplify this later, but should work for now
-			const thisChunkIdx = Math.floor(cursor / inode.chunksize);
-			const subChunkStart = cursor % inode.chunksize;
-			const subChunkEnd = Math.min(inode.chunksize, endAt % inode.chunksize);
-			const dataStartIdx = cursor - offset;
-			const dataEndIdx = dataStartIdx + (subChunkEnd - subChunkStart);
+		let cursor = 0;
+		while (cursor < data.length) {
+			let fileOffset = cursor + offset;
+			let nextChunkIdx = Math.floor(fileOffset / inode.chunksize);
+			let nextChunkId = inode.chunks[nextChunkIdx];
+			let nextChunkOffset = fileOffset % inode.chunksize;
+			let nextChunkData = data.slice(cursor, Math.min(cursor + inode.chunksize - nextChunkOffset, data.length));
 
-			// Pad with zeros until we reach the desired index
-			while (inode.chunks.length < thisChunkIdx) {
-				inode.chunks.push(-1);
-			}
-
-			// Insert new chunk
-			const thisChunkId = inode.chunks[thisChunkIdx];
-			if (thisChunkId === undefined || thisChunkId === -1) {
-				// Create new chunk and assign
+			if (nextChunkId === undefined) {
+				// Create new chunk
 				const newData = new Uint8Array(inode.chunksize);
-				newData.set(data.slice(dataStartIdx, dataEndIdx), dataStartIdx);
+				newData.set(nextChunkData, nextChunkOffset);
 				const newChunkId = await chunkStore.add({ data: newData });
-				inode.chunks[thisChunkIdx] = newChunkId;
+				inode.chunks[nextChunkIdx] = newChunkId;
 			} else {
-				// Update existing chunk
-				const chunk = await chunkStore.get(thisChunkId);
-				if (chunk === undefined) {
-					throw new FsError("Missing chunk");
-				}
-				chunk.data.set(data.slice(dataStartIdx, dataEndIdx), dataStartIdx);
-				await chunkStore.put(chunk);
+				let nextChunk = await chunkStore.get(nextChunkId);
+				if (nextChunk === undefined) throw new FsError("Inconsistent filesystem")
+				// Write to existing chunk
+				nextChunk.data.set(nextChunkData, nextChunkOffset);
+				await chunkStore.put(nextChunk);
 			}
-
-			// Maybe a trim value isn't the best here, but I'm invested at this point
-			inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
-			if (inode.trim === inode.chunksize) inode.trim = 0;
-
-			// Advance cursor by written amount
-			cursor += subChunkEnd - subChunkStart;
+			cursor += nextChunkData.length;
 		}
 
+		// Update trim and store
+		inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
 		await inodeStore.put(inode);
 
 		return data.length;
