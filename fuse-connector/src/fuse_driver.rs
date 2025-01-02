@@ -4,6 +4,8 @@ use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
     ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, TimeOrNow,
 };
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 fn make_timestamp(time: TimeOrNow) -> u64 {
@@ -87,7 +89,11 @@ pub enum FsCallback {
     ReplyEmpty(ReplyEmpty),
     ReplyOpen(ReplyOpen),
     ReplyWrite(ReplyWrite),
-    ReplyDirectory(ReplyDirectory),
+    ReplyDirectory(
+        ReplyDirectory,
+        u64,
+        Option<Arc<Mutex<HashMap<u64, Vec<(u64, FileType, String)>>>>>,
+    ),
     ReplyStatfs(ReplyStatfs),
     ReplyXattr(ReplyXattr),
 }
@@ -156,20 +162,27 @@ impl FsCallback {
                     reply.written(bytes_written);
                 }
             }
-            Self::ReplyDirectory(mut reply) => {
+            Self::ReplyDirectory(mut reply, fd, inode_cache) => {
                 if error_code != 0 {
                     reply.error(error_code);
                 } else {
                     let response_length = packet.read_u16()?;
+                    let mut cache = Vec::<_>::new();
+                    let mut stop_adding = false;
 
                     for i in 0..response_length {
                         let ino = packet.read_u64()?;
                         let file_type = type_from_mode(packet.read_u32()?)
                             .expect("Cannot get mode while listing directory");
                         let name = packet.read_str()?.ok()?;
-                        if reply.add(ino, (i as i64) + 1, file_type, name) {
-                            break;
-                        }
+                        cache.push((ino, file_type, String::from(name)));
+                        stop_adding =
+                            stop_adding || reply.add(ino, (i as i64) + 1, file_type, name);
+                    }
+
+                    if let Some(inode_cache) = inode_cache {
+                        let mut inode_cache = inode_cache.lock().unwrap();
+                        inode_cache.insert(fd, cache);
                     }
 
                     reply.ok();
@@ -222,11 +235,15 @@ impl FsCallback {
 /// requests and the websocket.
 pub struct Wsfs<T: FsComms> {
     comms: T,
+    dircache: Arc<Mutex<HashMap<u64, Vec<(u64, FileType, String)>>>>,
 }
 
 impl<T: FsComms> Wsfs<T> {
     pub fn new(inner: T) -> Self {
-        return Wsfs { comms: inner };
+        return Wsfs {
+            comms: inner,
+            dircache: Arc::new(Mutex::new(HashMap::new())),
+        };
     }
 }
 
@@ -631,20 +648,43 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         ino: u64,
         fh: u64,
         offset: i64,
-        reply: fuser::ReplyDirectory,
+        mut reply: fuser::ReplyDirectory,
     ) {
-        let response_id = self.comms.get_available_rid();
-        let mut packet = PacketWriter::new();
+        let dircache = self.dircache.lock().unwrap();
+        match dircache.get(&fh) {
+            Some(dirlisting) => {
+                for (i, (ino, file_type, name)) in dirlisting.iter().skip(offset as _).enumerate() {
+                    if !reply.add(*ino, offset + (i as i64) + 1, *file_type, name.as_str()) {
+                        break;
+                    }
+                }
+                reply.ok();
+            }
+            None => {
+                let response_id = self.comms.get_available_rid();
+                let mut packet = PacketWriter::new();
 
-        packet.write_u8(constants::actions::READDIR);
-        packet.write_u16(response_id);
-        packet.write_u64(ino);
-        packet.write_u64(fh);
-        packet.write_i64(offset);
+                packet.write_u8(constants::actions::READDIR);
+                packet.write_u16(response_id);
+                packet.write_u64(ino);
+                packet.write_u64(fh);
+                packet.write_i64(offset);
 
-        self.comms
-            .add_callback(response_id, FsCallback::ReplyDirectory(reply));
-        self.comms.send_packet(packet.finish());
+                self.comms.add_callback(
+                    response_id,
+                    FsCallback::ReplyDirectory(
+                        reply,
+                        fh,
+                        if offset == 0 {
+                            Some(Arc::clone(&self.dircache))
+                        } else {
+                            None
+                        },
+                    ),
+                );
+                self.comms.send_packet(packet.finish());
+            }
+        }
     }
 
     fn releasedir(
@@ -667,6 +707,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         self.comms
             .add_callback(response_id, FsCallback::ReplyEmpty(reply));
         self.comms.send_packet(packet.finish());
+        self.dircache.lock().unwrap().remove(&fh);
     }
 
     fn statfs(&mut self, _req: &fuser::Request<'_>, _ino: u64, reply: fuser::ReplyStatfs) {
