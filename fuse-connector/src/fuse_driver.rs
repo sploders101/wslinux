@@ -110,7 +110,7 @@ impl FsCallback {
                     let generation = packet.read_u64()?;
                     let fh = packet.read_u64()?;
                     let flags = packet.read_u32()?;
-                    reply.created(&Duration::from_secs(0), &attr, generation, fh, flags);
+                    reply.created(&Duration::from_secs(30), &attr, generation, fh, flags);
                 }
             }
             Self::ReplyEmpty(reply) => {
@@ -126,7 +126,7 @@ impl FsCallback {
                 } else {
                     let generation = packet.read_u64()?;
                     let attr = decode_attr(&mut packet)?;
-                    reply.entry(&Duration::from_secs(0), &attr, generation);
+                    reply.entry(&Duration::from_secs(30), &attr, generation);
                 }
             }
             Self::ReplyAttr(reply) => {
@@ -134,7 +134,7 @@ impl FsCallback {
                     reply.error(error_code);
                 } else {
                     let attr = decode_attr(&mut packet)?;
-                    reply.attr(&Duration::from_secs(0), &attr);
+                    reply.attr(&Duration::from_secs(30), &attr);
                 }
             }
             Self::ReplyData(reply) => {
