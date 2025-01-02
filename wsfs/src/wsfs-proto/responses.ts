@@ -3,6 +3,18 @@ import { Entry, FsStats, NodeAttr, ReaddirEntry } from "../idbfs/types";
 import { PacketBuilder } from "../packetizers";
 import { constants } from "./constants";
 
+const debug = !!localStorage.getItem("debug-mode");
+function audit(name: string, ...args: any) {
+	if (debug) {
+		console.log(name, args);
+	}
+}
+
+function auditResponse(name: string, responseId: number, args: any) {
+	audit("response", name, responseId, args);
+	window.activeRequests.delete(responseId);
+}
+
 /** Adds an attribute struct into the given packet */
 function encodeAttr(packet: PacketBuilder, attr: NodeAttr) {
 	packet.u64(BigInt(attr.ino));
@@ -24,6 +36,7 @@ function encodeAttr(packet: PacketBuilder, attr: NodeAttr) {
  * Sends empty response to signal completion of the requested task
  */
 export async function empty(ws: WebSocket, responseId: number) {
+	auditResponse("empty", responseId, null);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -37,6 +50,7 @@ export async function empty(ws: WebSocket, responseId: number) {
  * Responds to a message with a nodestat and generation
  */
 export async function entry(ws: WebSocket, responseId: number, entry: Entry) {
+	auditResponse("entry", responseId, entry);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -52,6 +66,7 @@ export async function entry(ws: WebSocket, responseId: number, entry: Entry) {
  * Responds to a message with a nodestat
  */
 export async function attr(ws: WebSocket, responseId: number, attr: NodeAttr) {
+	auditResponse("attr", responseId, attr);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -63,6 +78,7 @@ export async function attr(ws: WebSocket, responseId: number, attr: NodeAttr) {
 }
 
 export function data(ws: WebSocket, responseId: number, data: string | Uint8Array) {
+	auditResponse("data", responseId, data);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -79,6 +95,7 @@ export function data(ws: WebSocket, responseId: number, data: string | Uint8Arra
 }
 
 export function open(ws: WebSocket, responseId: number, openResponse: { fh: number, flags: number }) {
+	auditResponse("open", responseId, openResponse);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -91,6 +108,7 @@ export function open(ws: WebSocket, responseId: number, openResponse: { fh: numb
 }
 
 export function write(ws: WebSocket, responseId: number, bytesWritten: number) {
+	auditResponse("write", responseId, bytesWritten);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -102,6 +120,7 @@ export function write(ws: WebSocket, responseId: number, bytesWritten: number) {
 }
 
 export function readdir(ws: WebSocket, responseId: number, openResponse: ReaddirEntry[]) {
+	auditResponse("readdir", responseId, openResponse);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -118,6 +137,7 @@ export function readdir(ws: WebSocket, responseId: number, openResponse: Readdir
 }
 
 export function statfs(ws: WebSocket, responseId: number, stat: FsStats) {
+	auditResponse("statfs", responseId, stat);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -136,6 +156,7 @@ export function statfs(ws: WebSocket, responseId: number, stat: FsStats) {
 }
 
 export function xattr(ws: WebSocket, responseId: number, sizeOrData: number | Uint8Array) {
+	auditResponse("xattr", responseId, sizeOrData);
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -153,6 +174,7 @@ export function xattr(ws: WebSocket, responseId: number, sizeOrData: number | Ui
 }
 
 export function error(ws: WebSocket, responseId: number, dataType: number, errCode: ErrorCode) {
+	auditResponse("error", responseId, { dataType, errCode });
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
@@ -163,6 +185,7 @@ export function error(ws: WebSocket, responseId: number, dataType: number, errCo
 }
 
 export function create(ws: WebSocket, responseId: number, attr: NodeAttr, generation: number, fh: number, flags: number) {
+	auditResponse("create", responseId, { attr, generation, fh, flags });
 	const packet = new PacketBuilder();
 	packet.u8(constants.actions.internals);
 	packet.u8(constants.internals.reply);
