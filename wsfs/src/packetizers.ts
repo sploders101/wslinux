@@ -73,8 +73,8 @@ export class PacketBuilder {
 	}
 
 	buffer(value: Uint8Array) {
-		this._alloc(2 + value.length);
-		this.u16(value.length);
+		this._alloc(4 + value.length);
+		this.u32(value.length);
 		this._buf.set(value, this._cursor);
 		this._cursor += value.length; // Already advanced 2 from this.u16
 	}
@@ -158,7 +158,7 @@ export class PacketReader {
 	}
 
 	buffer() {
-		const bufSize = this.u16();
+		const bufSize = this.u32();
 		const buf = this._buf.slice(this._cursor, this._cursor + bufSize);
 		this._cursor += bufSize; // Cursor already advanced 2 for size header in this.readU16
 		return buf;

@@ -55,7 +55,7 @@ impl PacketWriter {
         if length > u16::MAX as _ {
             return Err(PacketWriteError::TooLarge);
         }
-        self.write_u16(length as _);
+        self.write_u32(length as _);
         self.packet.extend_from_slice(bytes);
         return Ok(());
     }
@@ -223,7 +223,7 @@ impl<'a> PacketReader<'a> {
     }
 
     pub fn read_bytes(&mut self) -> Option<&[u8]> {
-        let length = self.read_u16()? as usize;
+        let length = self.read_u32()? as usize;
         if self.cursor + length > self.packet.len() {
             return None;
         }
