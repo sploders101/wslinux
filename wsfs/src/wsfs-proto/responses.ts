@@ -4,15 +4,13 @@ import { PacketBuilder } from "../packetizers";
 import { constants } from "./constants";
 
 const debug = !!localStorage.getItem("debug-mode");
-function audit(name: string, ...args: any) {
-	if (debug) {
-		console.log(name, args);
-	}
-}
 
 function auditResponse(name: string, responseId: number, args: any) {
-	audit("response", name, responseId, args);
+	const request = window.activeRequests.get(responseId)!;
 	window.activeRequests.delete(responseId);
+	if (debug || window.audits?.includes(request[0])) {
+		console.log(`response - ${responseId} - ${name}`, args);
+	}
 }
 
 /** Adds an attribute struct into the given packet */

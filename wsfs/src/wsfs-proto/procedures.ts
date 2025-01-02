@@ -6,12 +6,15 @@ import * as respond from "./responses";
 
 const debug = !!localStorage.getItem("debug-mode");
 declare global {
-    interface Window { activeRequests: Map<number, [string, any]>; }
+    interface Window {
+    	activeRequests: Map<number, [string, any]>,
+    	audits?: string[],
+    }
 }
 window.activeRequests = new Map();
 
 function audit(name: string, args: any) {
-	if (debug) {
+	if (debug || window.audits?.includes(name)) {
 		console.log(name, args);
 	}
 }
