@@ -149,71 +149,112 @@ function gengen(): number {
 	return Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
 }
 
+class Lock {
+	isLocked = false;
+	mutexWaiters: Array<(() => Promise<void>) | (() => Promise<void>)[]> = [];
+
+	withRead<T>(func: () => Promise<T>): Promise<T> {
+		return new Promise<T>((res, rej) => {
+			let readWaiters = this.mutexWaiters[this.mutexWaiters.length - 1];
+			if (!Array.isArray(readWaiters)) {
+				readWaiters = [];
+				this.mutexWaiters.push(readWaiters);
+			}
+
+			readWaiters.push(() => {
+				return func().then(res, rej);
+			});
+
+			this.run();
+		});
+	}
+
+	withWrite<T>(func: () => Promise<T>): Promise<T> {
+		return new Promise<T>((res, rej) => {
+			this.mutexWaiters.push(() => {
+				return func().then(res, rej);
+			});
+			this.run();
+		});
+	}
+
+	private run() {
+		// If not locked, go ahead and set things in motion
+		if (!this.isLocked) {
+			this.isLocked = true;
+			(async () => {
+				while (this.mutexWaiters.length > 0) {
+					let nextCallback = this.mutexWaiters.shift()!;
+					if (Array.isArray(nextCallback)) {
+						await Promise.allSettled(nextCallback.map((cb) => cb()));
+					} else {
+						await nextCallback();
+					}
+				}
+				this.isLocked = false;
+			})();
+		}
+	}
+}
+
 /**
  * An interface to a filesystem backed by IndexedDB.
  */
 class IdbFs {
+	dbLock: Lock;
 	db: IDBDatabase;
 	blockSize: number;
 	dirCache: Map<number, ReaddirEntry[]>;
 
 	constructor(database: IDBDatabase) {
+		this.dbLock = new Lock();
 		this.db = database;
 		this.blockSize = defaultBlockSize; // May be configurable later. We'll see...
 		this.dirCache = new Map();
 	}
 
-	async lookup(parent: number, name: string): Promise<Entry> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	lookup(parent: number, name: string): Promise<Entry> {
+		return this.dbLock.withRead(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const parentInode = await inodeStore.get(parent);
-		if (parentInode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (parentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
+			const parentInode = await inodeStore.get(parent);
+			if (parentInode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (parentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
 
-		const childInodeNum = parentInode.subdirs.get(name);
-		if (typeof childInodeNum !== "number") {
-			throw new FsError("No such file or directory");
-		}
-		const childInode = await inodeStore.get(childInodeNum);
-		if (childInode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		childInode.lookups += 1;
-		await inodeStore.put(childInode);
+			const childInodeNum = parentInode.subdirs.get(name);
+			if (typeof childInodeNum !== "number") {
+				throw new FsError("No such file or directory");
+			}
+			const childInode = await inodeStore.get(childInodeNum);
+			if (childInode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			childInode.lookups += 1;
+			await inodeStore.put(childInode);
 
-		return {
-			attr: await this.getattr(childInodeNum),
-			generation: childInode.generation,
-		};
+			return {
+				attr: await this.getattr(childInodeNum),
+				generation: childInode.generation,
+			};
+		});
 	}
 
 	async forget(inodeNum: number, nlookup: number) {
-		// Decrement lookup count by nlookup and delete inode if it is staged for deletion
-		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+		this.dbLock.withWrite(async () => {
+			// Decrement lookup count by nlookup and delete inode if it is staged for deletion
+			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
-		const inode = await inodeStore.get(inodeNum);
-		if (inode === undefined) return;
-		inode.lookups -= nlookup;
-
-		// Delete data if unreferenced
-		if (inode.deleted) {
-			await inodeStore.delete(inodeNum);
-			if (inode.type === FileType.File) {
-				inode.hardLinks -= 1;
-				if (inode.hardLinks === 0) {
-					for (const chunk of inode.chunks) {
-						await chunkStore.delete(chunk);
-					}
-				}
-			}
-		}
+			const inode = await inodeStore.get(inodeNum);
+			if (inode === undefined) return;
+			inode.lookups -= nlookup;
+		});
 	}
 
 	async getattr(inodeNum: number): Promise<NodeAttr> {
@@ -301,7 +342,7 @@ class IdbFs {
 		}
 	}
 
-	async setattr(
+	setattr(
 		ino: number,
 		mode: number | null,
 		uid: number | null,
@@ -311,25 +352,27 @@ class IdbFs {
 		ctimeMs: number | null,
 		crtimeMs: number | null,
 	): Promise<NodeAttr> {
-		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("Bad file descriptor");
-		}
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("Bad file descriptor");
+			}
 
-		if (mode !== null) inode.mode = mode;
-		if (uid !== null) inode.uid = uid;
-		if (gid !== null) inode.gid = gid;
-		if (size !== null && inode.type === FileType.File) await this.truncate(inode, size, transaction);
-		if (mtimeMs !== null) inode.mtime = mtimeMs;
-		if (ctimeMs !== null) inode.ctime = ctimeMs;
-		if (crtimeMs !== null) inode.crtime = crtimeMs;
+			if (mode !== null) inode.mode = mode;
+			if (uid !== null) inode.uid = uid;
+			if (gid !== null) inode.gid = gid;
+			if (size !== null && inode.type === FileType.File) await this.truncate(inode, size, transaction);
+			if (mtimeMs !== null) inode.mtime = mtimeMs;
+			if (ctimeMs !== null) inode.ctime = ctimeMs;
+			if (crtimeMs !== null) inode.crtime = crtimeMs;
 
-		await inodeStore.put(inode);
+			await inodeStore.put(inode);
 
-		return await this.getattr(ino);
+			return await this.getattr(ino);
+		});
 	}
 
 	async readlink(ino: number): Promise<string> {
@@ -343,7 +386,7 @@ class IdbFs {
 	}
 
 	/** Create a new file */
-	async mknod(
+	mknod(
 		uid: number,
 		gid: number,
 		parent: number,
@@ -352,94 +395,96 @@ class IdbFs {
 		umask: number,
 		rdev: number,
 	): Promise<Entry> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const parentInode = await inodeStore.get(parent);
-		if (parentInode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (parentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
-		if (parentInode.subdirs.has(name)) {
-			throw new FsError("File or directory already exists");
-		}
+			const parentInode = await inodeStore.get(parent);
+			if (parentInode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (parentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
+			if (parentInode.subdirs.has(name)) {
+				throw new FsError("File or directory already exists");
+			}
 
-		const now = Date.now();
+			const now = Date.now();
 
-		let inode: Inode;
-		switch (mode & S_IFMT) {
-			case S_IFDIR:
-				inode = {
-					type: FileType.Directory,
-					parent,
-					lookups: 0,
-					deleted: false,
-					generation: gengen(),
-					crtime: now,
-					ctime: now,
-					mtime: now,
-					mode: mode & (~umask),
-					gid,
-					uid,
-					subdirs: new Map(),
-					xattrs: new Map(),
-				};
-				break;
-			case S_IFLNK:
-				throw new FsError("Can't create link from mknod");
-			case S_IFREG:
-				inode = {
-					type: FileType.File,
-					lookups: 0,
-					openHandles: 0,
-					hardLinks: 1,
-					deleted: false,
-					generation: gengen(),
-					crtime: now,
-					ctime: now,
-					mtime: now,
-					mode: mode & (~umask),
-					gid,
-					uid,
-					chunks: [],
-					chunksize: this.blockSize,
-					trim: 0,
-					xattrs: new Map(),
-				};
-				break;
-			case S_IFBLK:
-			case S_IFCHR:
-			case S_IFIFO:
-			case S_IFSOCK:
-			default:
-				inode = {
-					type: FileType.Special,
-					lookups: 0,
-					deleted: false,
-					generation: gengen(),
-					crtime: now,
-					ctime: now,
-					mtime: now,
-					mode: mode & (~umask),
-					gid,
-					uid,
-					rdev,
-					xattrs: new Map(),
-				};
-				break;
-		}
+			let inode: Inode;
+			switch (mode & S_IFMT) {
+				case S_IFDIR:
+					inode = {
+						type: FileType.Directory,
+						parent,
+						lookups: 0,
+						deleted: false,
+						generation: gengen(),
+						crtime: now,
+						ctime: now,
+						mtime: now,
+						mode: mode & (~umask),
+						gid,
+						uid,
+						subdirs: new Map(),
+						xattrs: new Map(),
+					};
+					break;
+				case S_IFLNK:
+					throw new FsError("Can't create link from mknod");
+				case S_IFREG:
+					inode = {
+						type: FileType.File,
+						lookups: 0,
+						openHandles: 0,
+						hardLinks: 1,
+						deleted: false,
+						generation: gengen(),
+						crtime: now,
+						ctime: now,
+						mtime: now,
+						mode: mode & (~umask),
+						gid,
+						uid,
+						chunks: [],
+						chunksize: this.blockSize,
+						trim: 0,
+						xattrs: new Map(),
+					};
+					break;
+				case S_IFBLK:
+				case S_IFCHR:
+				case S_IFIFO:
+				case S_IFSOCK:
+				default:
+					inode = {
+						type: FileType.Special,
+						lookups: 0,
+						deleted: false,
+						generation: gengen(),
+						crtime: now,
+						ctime: now,
+						mtime: now,
+						mode: mode & (~umask),
+						gid,
+						uid,
+						rdev,
+						xattrs: new Map(),
+					};
+					break;
+			}
 
-		const inodeId = await inodeStore.add(inode);
-		inode.id = inodeId;
-		parentInode.subdirs.set(name, inodeId);
-		parentInode.mtime = Date.now();
-		await inodeStore.put(parentInode);
-		return {
-			attr: await this.getattr(inodeId),
-			generation: inode.generation,
-		}
+			const inodeId = await inodeStore.add(inode);
+			inode.id = inodeId;
+			parentInode.subdirs.set(name, inodeId);
+			parentInode.mtime = Date.now();
+			await inodeStore.put(parentInode);
+			return {
+				attr: await this.getattr(inodeId),
+				generation: inode.generation,
+			}
+		});
 	}
 
 	/** Create a new directory */
@@ -448,44 +493,60 @@ class IdbFs {
 	}
 
 	/** Unlinks an inode from the filesystem */
-	private async unlinkAny(parent: number, name: string, rmdir: boolean) {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	private unlinkAny(parent: number, name: string, rmdir: boolean) {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
-		const parentInode = await inodeStore.get(parent);
-		if (parentInode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (parentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
+			const parentInode = await inodeStore.get(parent);
+			if (parentInode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (parentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
 
-		const inodeNum = parentInode.subdirs.get(name);
-		if (typeof inodeNum !== "number") {
-			throw new FsError("No such file or directory");
-		}
+			const inodeNum = parentInode.subdirs.get(name);
+			if (typeof inodeNum !== "number") {
+				throw new FsError("No such file or directory");
+			}
 
-		const inode = await inodeStore.get(inodeNum);
-		if (inode !== undefined) {
-			if (inode.type === FileType.Directory) {
-				if (!rmdir) {
-					throw new FsError("Cannot unlink directory");
+			const inode = await inodeStore.get(inodeNum);
+			if (inode !== undefined) {
+				if (inode.type === FileType.Directory) {
+					if (!rmdir) {
+						throw new FsError("Cannot unlink directory");
+					}
+					if (inode.subdirs.size) {
+						throw new FsError("Cannot delete non-empty directory");
+					}
+				} else {
+					if (rmdir) {
+						throw new FsError("Not a directory");
+					}
 				}
-				if (inode.subdirs.size) {
-					throw new FsError("Cannot delete non-empty directory");
-				}
-			} else {
-				if (rmdir) {
-					throw new FsError("Not a directory");
+
+				// Delete data if unreferenced, otherwise update
+				if (("openHandles" in inode && inode.openHandles !== 0) || ("hardLinks" in inode && inode.hardLinks > 1)) {
+					inode.deleted = true;
+					inode.hardLinks -= 1;
+					await inodeStore.put(inode);
+				} else {
+					await inodeStore.delete(inodeNum);
+					if (inode.type === FileType.File) {
+						if (inode.hardLinks === 0) {
+							for (const chunk of inode.chunks) {
+								await chunkStore.delete(chunk);
+							}
+						}
+					}
 				}
 			}
-			inode.deleted = true;
-			await inodeStore.put(inode);
-			this.forget(inodeNum, 0);
-		}
 
-		parentInode.subdirs.delete(name);
-		await inodeStore.put(parentInode);
+			parentInode.subdirs.delete(name);
+			await inodeStore.put(parentInode);
+		});
 	}
 
 	/** Unlinks a file */
@@ -498,186 +559,200 @@ class IdbFs {
 		return this.unlinkAny(parent, name, true);
 	}
 
-	async symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<Entry> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	symlink(uid: number, gid: number, parent: number, linkName: string, target: string): Promise<Entry> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const parentInode = await inodeStore.get(parent);
-		if (parentInode === undefined || parentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
-		if (parentInode.subdirs.has(linkName)) {
-			throw new FsError("File already exists");
-		}
+			const parentInode = await inodeStore.get(parent);
+			if (parentInode === undefined || parentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
+			if (parentInode.subdirs.has(linkName)) {
+				throw new FsError("File already exists");
+			}
 
-		const now = Date.now();
+			const now = Date.now();
 
-		const symlinkInode = {
-			type: FileType.Symlink,
-			parent,
-			lookups: 0,
-			deleted: false,
-			generation: gengen(),
-			crtime: now,
-			ctime: now,
-			mtime: now,
-			mode: S_IFLNK | 0o777,
-			gid,
-			uid,
-			xattrs: new Map(),
-			target,
-		} as const;
-		const symlinkIno = await inodeStore.add(symlinkInode);
+			const symlinkInode = {
+				type: FileType.Symlink,
+				parent,
+				lookups: 0,
+				deleted: false,
+				generation: gengen(),
+				crtime: now,
+				ctime: now,
+				mtime: now,
+				mode: S_IFLNK | 0o777,
+				gid,
+				uid,
+				xattrs: new Map(),
+				target,
+			} as const;
+			const symlinkIno = await inodeStore.add(symlinkInode);
 
-		parentInode.subdirs.set(linkName, symlinkIno);
-		parentInode.mtime = Date.now();
-		await inodeStore.put(parentInode);
+			parentInode.subdirs.set(linkName, symlinkIno);
+			parentInode.mtime = Date.now();
+			await inodeStore.put(parentInode);
 
-		return {
-			attr: await this.getattr(symlinkIno),
-			generation: symlinkInode.generation,
-		}
+			return {
+				attr: await this.getattr(symlinkIno),
+				generation: symlinkInode.generation,
+			};
+		});
 	}
 
-	async rename(parent: number, name: string, newparent: number, newname: string, _flags: number): Promise<void> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	rename(parent: number, name: string, newparent: number, newname: string, _flags: number): Promise<void> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const parentInode = await inodeStore.get(parent);
-		if (parentInode === undefined || parentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
-		const ino = parentInode.subdirs.get(name);
-		if (ino === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
+			const parentInode = await inodeStore.get(parent);
+			if (parentInode === undefined || parentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
+			const ino = parentInode.subdirs.get(name);
+			if (ino === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
 
-		let newparentInode: (Inode & { id: number }) | undefined;
-		if (newparent === parent) {
-			newparentInode = parentInode;
-		} else {
-			newparentInode = await inodeStore.get(newparent);
-		}
-		if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
+			let newparentInode: (Inode & { id: number }) | undefined;
+			if (newparent === parent) {
+				newparentInode = parentInode;
+			} else {
+				newparentInode = await inodeStore.get(newparent);
+			}
+			if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
 
-		if (inode.type === FileType.Directory) {
-			inode.parent = newparent;
+			if (inode.type === FileType.Directory) {
+				inode.parent = newparent;
+				await inodeStore.put(inode);
+			}
+			const time = Date.now();
+			parentInode.subdirs.delete(name);
+			parentInode.mtime = time;
+			newparentInode.subdirs.set(newname, ino);
+			newparentInode.mtime = time;
+			await inodeStore.put(parentInode);
+			if (newparent !== parent) {
+				await inodeStore.put(newparentInode);
+			}
+		});
+	}
+
+	link(ino: number, newparent: number, newname: string): Promise<Entry> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (inode.type !== FileType.File) {
+				throw new FsError("Can only hard-link regular files");
+			}
+			const newparentInode = await inodeStore.get(newparent);
+			if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
+				throw new FsError("No such file or directory");
+			}
+			if (newparentInode.subdirs.has(newname)) {
+				throw new FsError("File already exists");
+			}
+
+			newparentInode.subdirs.set(newname, ino);
+
+			return {
+				attr: await this.getattr(ino),
+				generation: inode.generation,
+			}
+		});
+	}
+
+	open(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (inode.type !== FileType.File) {
+				throw new FsError("Can only open files");
+			}
+			inode.openHandles += 1;
 			await inodeStore.put(inode);
-		}
-		const time = Date.now();
-		parentInode.subdirs.delete(name);
-		parentInode.mtime = time;
-		newparentInode.subdirs.set(newname, ino);
-		newparentInode.mtime = time;
-		await inodeStore.put(parentInode);
-		if (newparent !== parent) {
-			await inodeStore.put(newparentInode);
-		}
+
+			return {
+				fh: ino,
+				flags: 0,
+			};
+		});
 	}
 
-	async link(ino: number, newparent: number, newname: string): Promise<Entry> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (inode.type !== FileType.File) {
-			throw new FsError("Can only hard-link regular files");
-		}
-		const newparentInode = await inodeStore.get(newparent);
-		if (newparentInode === undefined || newparentInode.type !== FileType.Directory) {
-			throw new FsError("No such file or directory");
-		}
-		if (newparentInode.subdirs.has(newname)) {
-			throw new FsError("File already exists");
-		}
-
-		newparentInode.subdirs.set(newname, ino);
-
-		return {
-			attr: await this.getattr(ino),
-			generation: inode.generation,
-		}
-	}
-
-	async open(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (inode.type !== FileType.File) {
-			throw new FsError("Can only open files");
-		}
-		inode.openHandles += 1;
-		await inodeStore.put(inode);
-
-		return {
-			fh: ino,
-			flags: 0,
-		};
-	}
-
-	async read(
+	read(
 		ino: number,
 		_fh: number,
 		offset: number,
 		size: number,
 		_flags: number,
 	): Promise<Uint8Array> {
-		const transaction = this.db.transaction(["inodes", "chunks"], "readonly");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+		return this.dbLock.withRead(async () => {
+			const transaction = this.db.transaction(["inodes", "chunks"], "readonly");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (inode.type !== FileType.File) {
-			throw new FsError("Can only open files");
-		}
-
-		const availableSize = inode.chunks.length * inode.chunksize - inode.trim - offset;
-		size = Math.min(availableSize, size);
-
-		const fileLength = inode.chunks.length * inode.chunksize - inode.trim;
-		const destBuf = new Uint8Array(size);
-		let cursor = 0;
-		while (cursor < size) {
-			let fileOffset = cursor + offset;
-			let chunkIdx = Math.floor(fileOffset / inode.chunksize);
-			let chunkId = inode.chunks[chunkIdx];
-			let chunkOffset = (cursor + offset) % inode.chunksize;
-
-			let chunk: Uint8Array;
-			if (chunkId === -1) {
-				chunk = new Uint8Array(inode.chunksize);
-			} else if (chunkId === undefined) {
-				break;
-			} else {
-				let thisChunk = await chunkStore.get(chunkId);
-				if (thisChunk === undefined) throw new Error("Filesystem inconsistency error.");
-				chunk = thisChunk.data;
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
 			}
-			let writeLength = Math.min(chunk.length, fileLength - cursor);
-			destBuf.set(chunk.slice(0, writeLength), cursor);
-			cursor += inode.chunksize - chunkOffset;
-		}
+			if (inode.type !== FileType.File) {
+				throw new FsError("Can only open files");
+			}
 
-		return destBuf.slice(0, Math.max(0, fileLength - offset));
+			const availableSize = inode.chunks.length * inode.chunksize - inode.trim - offset;
+			size = Math.min(availableSize, size);
+
+			const fileLength = inode.chunks.length * inode.chunksize - inode.trim;
+			const destBuf = new Uint8Array(size);
+			let cursor = 0;
+			while (cursor < size) {
+				let fileOffset = cursor + offset;
+				let chunkIdx = Math.floor(fileOffset / inode.chunksize);
+				let chunkId = inode.chunks[chunkIdx];
+				let chunkOffset = (cursor + offset) % inode.chunksize;
+
+				let chunk: Uint8Array;
+				if (chunkId === -1) {
+					chunk = new Uint8Array(inode.chunksize);
+				} else if (chunkId === undefined) {
+					break;
+				} else {
+					let thisChunk = await chunkStore.get(chunkId);
+					if (thisChunk === undefined) throw new Error("Filesystem inconsistency error.");
+					chunk = thisChunk.data;
+				}
+				let writeLength = Math.min(chunk.length, fileLength - cursor, size - cursor);
+				try {
+					destBuf.set(chunk.slice(0, writeLength), cursor);
+				} catch (err) {
+					debugger;
+				}
+				cursor += inode.chunksize - chunkOffset;
+			}
+
+			return destBuf.slice(0, Math.max(0, fileLength - offset));
+		});
 	}
 
-	async write(
+	write(
 		ino: number,
 		_fh: number,
 		offset: number,
@@ -685,104 +760,125 @@ class IdbFs {
 		_write_flags: number,
 		_flags: number,
 	): Promise<number> {
-		const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (inode.type !== FileType.File) {
-			throw new FsError("Can only open files");
-		}
-
-		let cursor = 0;
-		while (cursor < data.length) {
-			let fileOffset = cursor + offset;
-			let nextChunkIdx = Math.floor(fileOffset / inode.chunksize);
-			let nextChunkId = inode.chunks[nextChunkIdx];
-			let nextChunkOffset = fileOffset % inode.chunksize;
-			let nextChunkData = data.slice(cursor, Math.min(cursor + inode.chunksize - nextChunkOffset, data.length));
-
-			if (nextChunkId === undefined) {
-				// Create new chunk
-				const newData = new Uint8Array(inode.chunksize);
-				newData.set(nextChunkData, nextChunkOffset);
-				const newChunkId = await chunkStore.add({ data: newData });
-				inode.chunks[nextChunkIdx] = newChunkId;
-			} else {
-				let nextChunk = await chunkStore.get(nextChunkId);
-				if (nextChunk === undefined) throw new FsError("Inconsistent filesystem")
-				// Write to existing chunk
-				nextChunk.data.set(nextChunkData, nextChunkOffset);
-				await chunkStore.put(nextChunk);
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
 			}
-			cursor += nextChunkData.length;
-		}
+			if (inode.type !== FileType.File) {
+				throw new FsError("Can only open files");
+			}
 
-		// Update trim and store
-		inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
-		await inodeStore.put(inode);
+			let cursor = 0;
+			while (cursor < data.length) {
+				let fileOffset = cursor + offset;
+				let nextChunkIdx = Math.floor(fileOffset / inode.chunksize);
+				let nextChunkId = inode.chunks[nextChunkIdx];
+				let nextChunkOffset = fileOffset % inode.chunksize;
+				let nextChunkData = data.slice(cursor, Math.min(cursor + inode.chunksize - nextChunkOffset, data.length));
 
-		return data.length;
+				if (nextChunkId === undefined) {
+					// Create new chunk
+					const newData = new Uint8Array(inode.chunksize);
+					newData.set(nextChunkData, nextChunkOffset);
+					const newChunkId = await chunkStore.add({ data: newData });
+					inode.chunks[nextChunkIdx] = newChunkId;
+				} else {
+					let nextChunk = await chunkStore.get(nextChunkId);
+					if (nextChunk === undefined) throw new FsError("Inconsistent filesystem")
+					// Write to existing chunk
+					nextChunk.data.set(nextChunkData, nextChunkOffset);
+					await chunkStore.put(nextChunk);
+				}
+				cursor += nextChunkData.length;
+			}
+
+			// Update trim and store
+			inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
+			await inodeStore.put(inode);
+
+			return data.length;
+		});
 	}
 
-	async release(ino: number, _fh: number, _flags: number): Promise<void> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	release(ino: number, _fh: number, _flags: number): Promise<void> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
-		if (inode.type !== FileType.File) {
-			throw new FsError("Can only open files");
-		}
-		inode.openHandles -= 1;
-		await inodeStore.put(inode);
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
+			if (inode.type !== FileType.File) {
+				throw new FsError("Can only open files");
+			}
+			inode.openHandles -= 1;
+
+			// Delete data if unreferenced, otherwise update
+			if (inode.deleted && inode.openHandles === 0) {
+				await inodeStore.delete(ino);
+				if (inode.type === FileType.File) {
+					inode.hardLinks -= 1;
+					if (inode.hardLinks === 0) {
+						for (const chunk of inode.chunks) {
+							await chunkStore.delete(chunk);
+						}
+					}
+				}
+			} else {
+				await inodeStore.put(inode);
+			}
+		});
 	}
 
-	async opendir(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	opendir(ino: number, _flags: number): Promise<{ fh: number, flags: number }> {
+		return this.dbLock.withRead(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		} else if (inode.type !== FileType.Directory) {
-			throw new FsError("Not a directory");
-		}
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			} else if (inode.type !== FileType.Directory) {
+				throw new FsError("Not a directory");
+			}
 
-		let key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
-		while (this.dirCache.has(key)) key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+			let key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+			while (this.dirCache.has(key)) key = Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
 
-		const subdirListing: ReaddirEntry[] = [];
-		subdirListing.push({
-			ino: 1,
-			name: ".",
-			type: S_IFDIR,
-		});
-		subdirListing.push({
-			ino: 1,
-			name: "..",
-			type: S_IFDIR,
-		});
-		for (const [subdirName, subdirIno] of inode.subdirs.entries()) {
-			const subdirInode = await inodeStore.get(subdirIno);
-			if (subdirInode === undefined) continue;
+			const subdirListing: ReaddirEntry[] = [];
 			subdirListing.push({
-				ino: subdirIno,
-				name: subdirName,
-				type: subdirInode.mode & S_IFMT,
+				ino: 1,
+				name: ".",
+				type: S_IFDIR,
 			});
-		}
-		this.dirCache.set(key, subdirListing);
+			subdirListing.push({
+				ino: 1,
+				name: "..",
+				type: S_IFDIR,
+			});
+			for (const [subdirName, subdirIno] of inode.subdirs.entries()) {
+				const subdirInode = await inodeStore.get(subdirIno);
+				if (subdirInode === undefined) continue;
+				subdirListing.push({
+					ino: subdirIno,
+					name: subdirName,
+					type: subdirInode.mode & S_IFMT,
+				});
+			}
+			this.dirCache.set(key, subdirListing);
 
-		return {
-			fh: key,
-			flags: 0,
-		};
+			return {
+				fh: key,
+				flags: 0,
+			};
+		});
 	}
 
 	async readdir(_ino: number, fh: number): Promise<Array<ReaddirEntry>> {
@@ -814,24 +910,26 @@ class IdbFs {
 		};
 	}
 
-	async setxattr(
+	setxattr(
 		ino: number,
 		name: string,
 		value: Uint8Array,
 		_flags: number,
 		_position: number,
 	): Promise<void> {
-		const transaction = this.db.transaction(["inodes"], "readwrite");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readwrite");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
 
-		inode.xattrs.set(name, value);
+			inode.xattrs.set(name, value);
 
-		await inodeStore.put(inode);
+			await inodeStore.put(inode);
+		});
 	}
 
 	async getxattr(
@@ -866,17 +964,19 @@ class IdbFs {
 		return Array.from(inode.xattrs.keys());
 	}
 
-	async removexattr(ino: number, name: string): Promise<void> {
-		const transaction = this.db.transaction(["inodes"], "readonly");
-		const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
+	removexattr(ino: number, name: string): Promise<void> {
+		return this.dbLock.withWrite(async () => {
+			const transaction = this.db.transaction(["inodes"], "readonly");
+			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
-		const inode = await inodeStore.get(ino);
-		if (inode === undefined) {
-			throw new FsError("No such file or directory");
-		}
+			const inode = await inodeStore.get(ino);
+			if (inode === undefined) {
+				throw new FsError("No such file or directory");
+			}
 
-		inode.xattrs.delete(name);
-		await inodeStore.put(inode);
+			inode.xattrs.delete(name);
+			await inodeStore.put(inode);
+		});
 	}
 }
 
@@ -884,4 +984,3 @@ export {
 	openIdbFs,
 	IdbFs,
 };
-
