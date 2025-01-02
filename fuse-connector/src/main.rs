@@ -98,12 +98,14 @@ fn print_qr() {
 
     if let Some(interface) = interface {
         if let Some(ipnet) = interface.ips.get(0) {
-            if let Ok(qrcode) = QrCode::new(format!("https://{}:3030/", ipnet.ip())) {
+            let url = format!("https://{}:3030/", ipnet.ip());
+            if let Ok(qrcode) = QrCode::new(&url) {
                 let image = qrcode
                     .render()
                     .dark_color(qrcode::render::unicode::Dense1x2::Dark)
                     .light_color(qrcode::render::unicode::Dense1x2::Light)
                     .build();
+                println!("{url}");
                 println!("{}", image);
                 return;
             }
