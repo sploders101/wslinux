@@ -341,6 +341,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         let mut packet = PacketWriter::new();
 
         packet.write_u8(constants::actions::READLINK);
+        packet.write_u16(response_id);
         packet.write_u64(ino);
 
         self.comms
