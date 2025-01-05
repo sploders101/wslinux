@@ -3,12 +3,10 @@ import { Entry, FsStats, NodeAttr, ReaddirEntry } from "../idbfs/types";
 import { PacketBuilder } from "../packetizers";
 import { constants } from "./constants";
 
-const debug = !!localStorage.getItem("debug-mode");
-
 function auditResponse(name: string, responseId: number, args: any) {
 	const request = window.activeRequests.get(responseId)!;
 	window.activeRequests.delete(responseId);
-	if (debug || window.audits?.includes(request[0])) {
+	if (window.debugMode || window.audits?.includes(request[0])) {
 		console.log(`response - ${responseId} - ${name}`, args);
 	}
 }

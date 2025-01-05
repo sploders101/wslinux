@@ -4,17 +4,17 @@ import { PacketReader } from "../packetizers";
 import { constants } from "./constants";
 import * as respond from "./responses";
 
-const debug = !!localStorage.getItem("debug-mode");
 declare global {
     interface Window {
     	activeRequests: Map<number, [string, any]>,
     	audits?: string[],
+    	debugMode?: boolean,
     }
 }
 window.activeRequests = new Map();
 
 function audit(name: string, args: any) {
-	if (debug || window.audits?.includes(name)) {
+	if (window.debugMode || window.audits?.includes(name)) {
 		console.log(name, args);
 	}
 }
