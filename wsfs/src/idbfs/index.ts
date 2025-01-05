@@ -66,43 +66,13 @@ function openIdbFs(name: string): Promise<IdbFs> {
 	});
 }
 
-const EPERM = 1;
 const ENOENT = 2;
-const ESRCH = 3;
-const EINTR = 4;
 const EIO = 5;
-const ENXIO = 6;
-const E2BIG = 7;
-const ENOEXEC = 8;
 const EBADF = 9;
-const ECHILD = 10;
-const EAGAIN = 11;
-const ENOMEM = 12;
-const EACCES = 13;
-const EFAULT = 14;
-const ENOTBLK = 15;
-const EBUSY = 16;
 const EEXIST = 17;
-const EXDEV = 18;
-const ENODEV = 19;
-const ENOTDIR = 20;
 const EISDIR = 21;
-const EINVAL = 22;
-const ENFILE = 23;
-const EMFILE = 24;
-const ENOTTY = 25;
-const ETXTBSY = 26;
-const EFBIG = 27;
-const ENOSPC = 28;
-const ESPIPE = 29;
-const EROFS = 30;
-const EMLINK = 31;
-const EPIPE = 32;
-const EDOM = 33;
-const ERANGE = 34;
-const EWOULDBLOCK = EAGAIN;
-const ENOTEMPTY = 66;
-const ENODATA = 96;
+const ENOTEMPTY = 39;
+const ENODATA = 61;
 
 const errorMap: Record<string, number> = {
 	"No such file or directory": ENOENT,
