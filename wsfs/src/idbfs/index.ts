@@ -102,7 +102,7 @@ export class FsError extends Error {
 }
 
 /** The size of each chunk */
-const defaultBlockSize = 16384;
+const defaultBlockSize = 4096;
 
 /** bitmask for file type inside mode */
 export const S_IFMT = 0o170000;
