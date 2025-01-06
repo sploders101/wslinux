@@ -1,5 +1,5 @@
-import { ObjStoreWrapper } from "./idbWrappers";
-import { Chunk, Entry, FileType, FsStats, Inode, NodeAttr, ReaddirEntry } from "./types";
+import { ChunkStoreWrapper, ObjStoreWrapper } from "./idbWrappers";
+import { Entry, FileType, FsStats, Inode, NodeAttr, ReaddirEntry } from "./types";
 
 /**
  * Opens a filesystem backed by IndexedDB
@@ -54,7 +54,6 @@ function openIdbFs(name: string): Promise<IdbFs> {
 			// Data chunks
 			db.createObjectStore("chunks", {
 				autoIncrement: true,
-				keyPath: "id",
 			});
 		};
 		request.onsuccess = () => {
@@ -219,7 +218,6 @@ class IdbFs {
 			// Decrement lookup count by nlookup and delete inode if it is staged for deletion
 			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
 
 			const inode = await inodeStore.get(inodeNum);
 			if (inode === undefined) return;
@@ -283,7 +281,7 @@ class IdbFs {
 
 	/** Sets a file's length. Locks chunk database. Do not call if you've already locked chunk database!!! */
 	private async truncate(inode: Inode, size: number, transaction: IDBTransaction): Promise<void> {
-		const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+		const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
 
 		if (inode.type !== FileType.File) {
 			// Maybe throw an error here? Not really sure...
@@ -303,10 +301,11 @@ class IdbFs {
 				await chunkStore.delete(inode.chunks.pop()!);
 			}
 			if (inode.chunks.length > 0 && inode.trim > 0) {
-				const chunk = await chunkStore.get(inode.chunks[inode.chunks.length - 1]);
+				const chunkId = inode.chunks[inode.chunks.length - 1];
+				const chunk = await chunkStore.get(chunkId);
 				if (chunk !== undefined) {
-					chunk.data.set(new Array(inode.trim).fill(0), chunk.data.length - inode.trim);
-					await chunkStore.put(chunk);
+					chunk.set(new Array(inode.trim).fill(0), chunk.length - inode.trim);
+					await chunkStore.put(chunkId, chunk);
 				}
 			}
 		}
@@ -467,7 +466,7 @@ class IdbFs {
 		return this.dbLock.withWrite(async () => {
 			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+			const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
 
 			const parentInode = await inodeStore.get(parent);
 			if (parentInode === undefined) {
@@ -677,7 +676,7 @@ class IdbFs {
 		return this.dbLock.withRead(async () => {
 			const transaction = this.db.transaction(["inodes", "chunks"], "readonly");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+			const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
 
 			const inode = await inodeStore.get(ino);
 			if (inode === undefined) {
@@ -707,7 +706,7 @@ class IdbFs {
 				} else {
 					let thisChunk = await chunkStore.get(chunkId);
 					if (thisChunk === undefined) throw new Error("Filesystem inconsistency error.");
-					chunk = thisChunk.data;
+					chunk = thisChunk;
 				}
 				let writeLength = Math.min(chunk.length, fileLength - cursor, size - cursor);
 				try {
@@ -733,7 +732,7 @@ class IdbFs {
 		return this.dbLock.withWrite(async () => {
 			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+			const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
 
 			const inode = await inodeStore.get(ino);
 			if (inode === undefined) {
@@ -755,14 +754,14 @@ class IdbFs {
 					// Create new chunk
 					const newData = new Uint8Array(inode.chunksize);
 					newData.set(nextChunkData, nextChunkOffset);
-					const newChunkId = await chunkStore.add({ data: newData });
+					const newChunkId = await chunkStore.add(newData);
 					inode.chunks[nextChunkIdx] = newChunkId;
 				} else {
 					let nextChunk = await chunkStore.get(nextChunkId);
 					if (nextChunk === undefined) throw new FsError("Inconsistent filesystem")
 					// Write to existing chunk
-					nextChunk.data.set(nextChunkData, nextChunkOffset);
-					await chunkStore.put(nextChunk);
+					nextChunk.set(nextChunkData, nextChunkOffset);
+					await chunkStore.put(nextChunkId, nextChunk);
 				}
 				cursor += nextChunkData.length;
 			}
@@ -779,7 +778,7 @@ class IdbFs {
 		return this.dbLock.withWrite(async () => {
 			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
-			const chunkStore = new ObjStoreWrapper<Chunk>(transaction.objectStore("chunks"));
+			const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
 
 			const inode = await inodeStore.get(ino);
 			if (inode === undefined) {

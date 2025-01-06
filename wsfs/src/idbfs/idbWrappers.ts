@@ -88,3 +88,47 @@ export class ObjStoreWrapper<T extends { id?: IDBValidKey }> {
 		});
 	}
 }
+
+export class ChunkStoreWrapper {
+	store: IDBObjectStore;
+
+	constructor(store: IDBObjectStore) {
+		this.store = store;
+	}
+
+	/** Get object from store */
+	get(query: number) {
+		return new PseudoPromise<Uint8Array | undefined>((res, rej) => {
+			const result = this.store.get(query);
+			result.onsuccess = () => res(result.result);
+			result.onerror = () => rej(result.error);
+		});
+	}
+
+	/** Add object to store */
+	add(obj: Uint8Array) {
+		return new PseudoPromise<number>((res, rej) => {
+			const result = this.store.add(obj);
+			result.onsuccess = () => res(result.result as number);
+			result.onerror = () => rej(result.error);
+		});
+	}
+
+	/** Update/Add an object in the store */
+	put(key: number, obj: Uint8Array) {
+		return new PseudoPromise<number>((res, rej) => {
+			const result = this.store.put(obj, key);
+			result.onsuccess = () => res(result.result as number);
+			result.onerror = () => rej(result.error);
+		});
+	}
+
+	/** Delete object from store */
+	delete(key: number) {
+		return new PseudoPromise<void>((res, rej) => {
+			const result = this.store.delete(key);
+			result.onsuccess = () => res();
+			result.onerror = () => rej(result.error);
+		});
+	}
+}
