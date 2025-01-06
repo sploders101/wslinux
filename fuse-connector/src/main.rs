@@ -2,12 +2,18 @@ mod binary_packets;
 mod constants;
 mod fuse_driver;
 
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    os::fd::AsRawFd,
+    sync::Arc,
+};
 
 use binary_packets::PacketReader;
 use fuse_driver::{FsCallback, FsComms, Wsfs};
 use fuser::{BackgroundSession, MountOption};
 use futures_util::{SinkExt, StreamExt};
+use nix::unistd::ForkResult;
 use qrcode::QrCode;
 use tokio::{
     select,
@@ -17,19 +23,68 @@ use tokio::{
     },
 };
 use warp::{filters::ws::Message, Filter};
+use clap::Parser;
 
-#[tokio::main]
-async fn main() {
+#[derive(Parser)]
+struct Args {
+    mountpoint: String,
+
+    #[arg(short = 'o', long, default_value = "")]
+    options: String,
+}
+
+fn main() {
+    let args = Args::parse();
+    let options = parse_options(&args.options).collect::<Vec<_>>();
+    let (recv, send) = nix::unistd::pipe().expect("Couldn't create pipe");
+    unsafe {
+        match nix::unistd::fork().expect("Couldn't fork wsfs-connector") {
+            ForkResult::Parent { .. } => {
+                nix::unistd::close(send.as_raw_fd()).unwrap();
+
+                let mut file = std::fs::File::from(recv);
+                let mut buf = Vec::new();
+                let _ = file.read_to_end(&mut buf);
+                let mut packet = PacketReader::new(&buf);
+                let return_code = packet.read_i32();
+                if return_code != Some(0) {
+                    panic!("Return code from child was not 0. Something went very wrong.");
+                }
+            }
+            ForkResult::Child => {
+                nix::unistd::close(recv.as_raw_fd()).unwrap();
+                let file = std::fs::File::from(send);
+
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Couldn't build tokio runtime");
+                runtime.block_on(tokio_entrypoint(file, args, options));
+            }
+        }
+    }
+}
+
+async fn tokio_entrypoint(file: std::fs::File, args: Args, options: Vec<MountOption>) {
     pretty_env_logger::init();
+    let file = Arc::new(tokio::sync::Mutex::new(Some(file)));
+    let args = Arc::new(args);
+    let options = Arc::new(options);
 
     let ws_route = warp::path("fshost")
         // The `ws()` filter will prepare the Websocket handshake.
         .and(warp::ws())
-        .map(|ws: warp::ws::Ws| {
+        .map(move |ws: warp::ws::Ws| {
             // And then our closure will be called when it completes...
-            ws.on_upgrade(|mut websocket| async move {
+            let file = Arc::clone(&file);
+            let args = Arc::clone(&args);
+            let options = Arc::clone(&options);
+            ws.on_upgrade(move |mut websocket| async move {
                 println!("Connection established. Mounting filesystem.");
-                let mut message_handler = WsMessageHandler::new();
+                if let Some(mut file) = file.lock().await.take() {
+                    let _ = file.write_all(&0i32.to_ne_bytes());
+                }
+                let mut message_handler = WsMessageHandler::new(&args.mountpoint, &options);
                 loop {
                     select! {
                         chunk = websocket.next() => match chunk {
@@ -114,6 +169,42 @@ fn print_qr() {
     println!("Error while finding the default interface. Could not print QR code.");
 }
 
+fn parse_options(opts: &str) -> impl Iterator<Item = MountOption> {
+    let mut options = HashSet::<MountOption>::from_iter([
+        MountOption::FSName(String::from("Wsfs")),
+        MountOption::AllowOther,
+        MountOption::DefaultPermissions,
+        MountOption::Suid,
+        MountOption::Exec,
+        MountOption::Async,
+        MountOption::NoAtime,
+        MountOption::AutoUnmount,
+    ]);
+    for option in opts.split(',') {
+        let option = option.trim();
+        match option {
+            "allow-other" => {
+                options.insert(MountOption::AllowOther);
+            }
+            "no-allow-other" => {
+                options.remove(&MountOption::AllowOther);
+            }
+            "defaults" => {}
+            "atime" => {
+                options.remove(&MountOption::NoAtime);
+                options.insert(MountOption::Atime);
+            }
+            "noatime" => {
+                options.insert(MountOption::NoAtime);
+                options.remove(&MountOption::Atime);
+            }
+            "" => {}
+            _ => panic!("Unknown option {option:?}"),
+        }
+    }
+    return options.into_iter();
+}
+
 struct WsMessageHandler {
     request_id: u16,
     callbacks: HashMap<u16, FsCallback>,
@@ -121,20 +212,9 @@ struct WsMessageHandler {
     _handle: BackgroundSession,
 }
 impl WsMessageHandler {
-    fn new() -> Self {
+    fn new(mountpoint: &str, options: &[MountOption]) -> Self {
         let (sender, receiver) = mpsc::channel(5);
         let wsfs = Wsfs::<WsfsDriver>::new(WsfsDriver { sender });
-        let mountpoint = "/tmp/test";
-        let options = &[
-            MountOption::FSName(String::from("Wsfs")),
-            MountOption::AllowOther,
-            MountOption::DefaultPermissions,
-            MountOption::Suid,
-            MountOption::Exec,
-            MountOption::Async,
-            MountOption::NoAtime,
-            MountOption::DirSync,
-        ];
         let handle =
             fuser::spawn_mount2(wsfs, mountpoint, options).expect("Could not mount filesystem");
         return Self {
