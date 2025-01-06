@@ -209,11 +209,11 @@ impl FsCallback {
                 } else {
                     let response_type = packet.read_u8()?;
                     match response_type {
-                        constants::xattrResponses::SIZE => {
+                        constants::xattr_responses::SIZE => {
                             let size = packet.read_u32()?;
                             reply.size(size);
                         }
-                        constants::xattrResponses::DATA => {
+                        constants::xattr_responses::DATA => {
                             let data = packet.read_bytes()?;
                             reply.data(data);
                         }

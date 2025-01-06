@@ -49,7 +49,7 @@ pub mod internals {
 	pub const VERSION: u8 = 0;
 	pub const REPLY: u8 = 1;
 }
-pub mod replyTypes {
+pub mod reply_types {
 	pub const EMPTY: u8 = 0;
 	pub const ENTRY: u8 = 1;
 	pub const ATTR: u8 = 2;
@@ -61,10 +61,10 @@ pub mod replyTypes {
 	pub const XATTR: u8 = 8;
 	pub const CREATE: u8 = 9;
 }
-pub mod replyStates {
+pub mod reply_states {
 	pub const SUCCESS: i32 = 0;
 }
-pub mod xattrResponses {
+pub mod xattr_responses {
 	pub const SIZE: u8 = 0;
 	pub const DATA: u8 = 1;
 }
