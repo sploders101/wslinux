@@ -17,7 +17,7 @@ function openIdbFs(name: string): Promise<IdbFs> {
 				keyPath: "id",
 			}));
 
-			const now = Date.now();
+			const now = Math.floor(Date.now() / 1000);
 
 			inodes.add({
 				id: 0,
@@ -237,7 +237,7 @@ class IdbFs {
 
 		let size: number;
 		let blocks: number;
-		let mtimeMs: number;
+		let mtime: number;
 		let nlink: number;
 		let rdev: number;
 		let blksize: number;
@@ -245,7 +245,7 @@ class IdbFs {
 		if (inode.type === FileType.File) {
 			size = inode.chunks.length * inode.chunksize - inode.trim;
 			blocks = inode.chunks.length;
-			mtimeMs = inode.mtime;
+			mtime = inode.mtime;
 			nlink = inode.hardLinks;
 			rdev = 0;
 			blksize = inode.chunksize;
@@ -257,7 +257,7 @@ class IdbFs {
 			}
 			size = 0;
 			blocks = 0;
-			mtimeMs = inode.ctime;
+			mtime = inode.ctime;
 			nlink = 1;
 			blksize = this.blockSize;
 		}
@@ -267,7 +267,7 @@ class IdbFs {
 			size,
 			blocks,
 			atimeSecs: 0,
-			mtimeSecs: mtimeMs,
+			mtimeSecs: mtime,
 			ctimeSecs: inode.ctime,
 			crtimeSecs: inode.crtime,
 			mode: inode.mode,
@@ -317,9 +317,9 @@ class IdbFs {
 		uid: number | null,
 		gid: number | null,
 		size: number | null,
-		mtimeMs: number | null,
-		ctimeMs: number | null,
-		crtimeMs: number | null,
+		mtime: number | null,
+		ctime: number | null,
+		crtime: number | null,
 	): Promise<NodeAttr> {
 		return this.dbLock.withWrite(async () => {
 			const transaction = this.db.transaction(["inodes", "chunks"], "readwrite");
@@ -334,9 +334,9 @@ class IdbFs {
 			if (uid !== null) inode.uid = uid;
 			if (gid !== null) inode.gid = gid;
 			if (size !== null && inode.type === FileType.File) await this.truncate(inode, size, transaction);
-			if (mtimeMs !== null) inode.mtime = mtimeMs;
-			if (ctimeMs !== null) inode.ctime = ctimeMs;
-			if (crtimeMs !== null) inode.crtime = crtimeMs;
+			if (mtime !== null) inode.mtime = mtime;
+			if (ctime !== null) inode.ctime = ctime;
+			if (crtime !== null) inode.crtime = crtime;
 
 			await inodeStore.put(inode);
 
@@ -379,7 +379,7 @@ class IdbFs {
 				throw new FsError("File or directory already exists");
 			}
 
-			const now = Date.now();
+			const now = Math.floor(Date.now() / 1000);
 
 			let inode: Inode;
 			switch (mode & S_IFMT) {
@@ -447,7 +447,7 @@ class IdbFs {
 			const inodeId = await inodeStore.add(inode);
 			inode.id = inodeId;
 			parentInode.subdirs.set(name, inodeId);
-			parentInode.mtime = Date.now();
+			parentInode.mtime = now;
 			await inodeStore.put(parentInode);
 			return {
 				attr: await this.getattr(inodeId),
@@ -541,7 +541,7 @@ class IdbFs {
 				throw new FsError("File already exists");
 			}
 
-			const now = Date.now();
+			const now = Math.floor(Date.now() / 1000);
 
 			const symlinkInode = {
 				type: FileType.Symlink,
@@ -561,7 +561,7 @@ class IdbFs {
 			const symlinkIno = await inodeStore.add(symlinkInode);
 
 			parentInode.subdirs.set(linkName, symlinkIno);
-			parentInode.mtime = Date.now();
+			parentInode.mtime = now;
 			await inodeStore.put(parentInode);
 
 			return {
@@ -603,7 +603,7 @@ class IdbFs {
 				inode.parent = newparent;
 				await inodeStore.put(inode);
 			}
-			const time = Date.now();
+			const time = Math.floor(Date.now() / 1000);
 			parentInode.subdirs.delete(name);
 			parentInode.mtime = time;
 			newparentInode.subdirs.set(newname, ino);

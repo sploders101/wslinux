@@ -80,9 +80,9 @@ export async function setattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 	let uid: number | null = null;
 	let gid: number | null = null;
 	let size: number | null = null;
-	let mtimeMs: number | null = null;
-	let ctimeMs: number | null = null;
-	let crtimeMs: number | null = null;
+	let mtime: number | null = null;
+	let ctime: number | null = null;
+	let crtime: number | null = null;
 
 	let nextType = data.u8();
 	while (nextType !== 0) {
@@ -100,21 +100,21 @@ export async function setattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 				size = Number(data.u64());
 				break;
 			case 5: // mtime
-				mtimeMs = Number(data.u64());
+				mtime = Number(data.u64());
 				break;
 			case 6: // ctime
-				ctimeMs = Number(data.u64());
+				ctime = Number(data.u64());
 				break;
 			case 7: // crtime
-				crtimeMs = Number(data.u64());
+				crtime = Number(data.u64());
 				break;
 		}
 		nextType = data.u8();
 	}
-	auditRequest("setattr", responseId, { ino, mode, uid, gid, size, mtimeMs, ctimeMs, crtimeMs });
+	auditRequest("setattr", responseId, { ino, mode, uid, gid, size, mtime, ctime, crtime });
 
 	try {
-		const attr = await fs.setattr(ino, mode, uid, gid, size, mtimeMs, ctimeMs, crtimeMs);
+		const attr = await fs.setattr(ino, mode, uid, gid, size, mtime, ctime, crtime);
 		respond.attr(ws, responseId, attr);
 	} catch (err) {
 		if (err instanceof FsError && err.code !== null) {
