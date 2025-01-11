@@ -935,7 +935,7 @@ class IdbFs {
 
 	removexattr(ino: number, name: string): Promise<void> {
 		return this.dbLock.withWrite(async () => {
-			const transaction = this.db.transaction(["inodes"], "readonly");
+			const transaction = this.db.transaction(["inodes"], "readwrite");
 			const inodeStore = new ObjStoreWrapper<Inode>(transaction.objectStore("inodes"));
 
 			const inode = await inodeStore.get(ino);
