@@ -1,8 +1,8 @@
 use crate::binary_packets::{PacketReader, PacketWriter};
 use crate::constants;
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
-    ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, TimeOrNow,
+    FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry,
+    ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, TimeOrNow,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -82,7 +82,7 @@ fn decode_attr(packet: &mut PacketReader) -> Option<FileAttr> {
 }
 
 pub enum FsCallback {
-    ReplyCreate(ReplyCreate),
+    // ReplyCreate(ReplyCreate),
     ReplyEntry(ReplyEntry),
     ReplyAttr(ReplyAttr),
     ReplyData(ReplyData),
@@ -102,17 +102,17 @@ impl FsCallback {
     pub fn respond(self, mut packet: PacketReader) -> Option<()> {
         let error_code = packet.read_i32()?;
         match self {
-            Self::ReplyCreate(reply) => {
-                if error_code != 0 {
-                    reply.error(error_code);
-                } else {
-                    let attr = decode_attr(&mut packet)?;
-                    let generation = packet.read_u64()?;
-                    let fh = packet.read_u64()?;
-                    let flags = packet.read_u32()?;
-                    reply.created(&Duration::from_secs(30), &attr, generation, fh, flags);
-                }
-            }
+            // Self::ReplyCreate(reply) => {
+            //     if error_code != 0 {
+            //         reply.error(error_code);
+            //     } else {
+            //         let attr = decode_attr(&mut packet)?;
+            //         let generation = packet.read_u64()?;
+            //         let fh = packet.read_u64()?;
+            //         let flags = packet.read_u32()?;
+            //         reply.created(&Duration::from_secs(30), &attr, generation, fh, flags);
+            //     }
+            // }
             Self::ReplyEmpty(reply) => {
                 if error_code != 0 {
                     reply.error(error_code);
@@ -248,6 +248,16 @@ impl<T: FsComms> Wsfs<T> {
 }
 
 impl<T: FsComms> Filesystem for Wsfs<T> {
+    fn init(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        config: &mut fuser::KernelConfig,
+    ) -> Result<(), libc::c_int> {
+        use fuser::consts::*;
+        config.add_capabilities(FUSE_POSIX_ACL).unwrap();
+
+        return Ok(());
+    }
     fn lookup(
         &mut self,
         _req: &fuser::Request<'_>,
