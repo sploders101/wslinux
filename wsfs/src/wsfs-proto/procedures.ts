@@ -499,7 +499,10 @@ export async function listxattr(fs: IdbFs, ws: WebSocket, data: PacketReader) {
 			}
 			respond.xattr(ws, responseId, keySize);
 		} else {
-			const catKeys = attributes.join("\0");
+			let catKeys = attributes.join("\0");
+			if (catKeys.length > 0) {
+				catKeys += "\0";
+			}
 			const catKeysBuf = new TextEncoder().encode(catKeys);
 
 			if (catKeysBuf.length <= size) {
