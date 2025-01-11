@@ -280,14 +280,12 @@ class IdbFs {
 	}
 
 	/** Sets a file's length. Locks chunk database. Do not call if you've already locked chunk database!!! */
-	private async truncate(inode: Inode, size: number, transaction: IDBTransaction): Promise<void> {
-		const chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
-
+	private async truncate(inode: Inode, size: number, chunkStore: ChunkStoreWrapper): Promise<void> {
 		if (inode.type !== FileType.File) {
 			// Maybe throw an error here? Not really sure...
 			return;
 		}
-		const expectedChunks = Math.floor(size / inode.chunksize);
+		const expectedChunks = Math.ceil(size / inode.chunksize);
 
 		inode.trim = inode.chunksize - (size % inode.chunksize)
 		if (inode.trim === inode.chunksize) inode.trim = 0;
@@ -333,7 +331,10 @@ class IdbFs {
 			if (mode !== null) inode.mode = mode;
 			if (uid !== null) inode.uid = uid;
 			if (gid !== null) inode.gid = gid;
-			if (size !== null && inode.type === FileType.File) await this.truncate(inode, size, transaction);
+			if (size !== null && inode.type === FileType.File) {
+				let chunkStore = new ChunkStoreWrapper(transaction.objectStore("chunks"));
+				await this.truncate(inode, size, chunkStore);
+			}
 			if (mtime !== null) inode.mtime = mtime;
 			if (ctime !== null) inode.ctime = ctime;
 			if (crtime !== null) inode.crtime = crtime;
@@ -504,10 +505,8 @@ class IdbFs {
 				} else {
 					await inodeStore.delete(inodeNum);
 					if (inode.type === FileType.File) {
-						if (inode.hardLinks === 0) {
-							for (const chunk of inode.chunks) {
-								await chunkStore.delete(chunk);
-							}
+						for (const chunk of inode.chunks) {
+							await chunkStore.delete(chunk);
 						}
 					}
 				}
@@ -742,6 +741,13 @@ class IdbFs {
 				throw new FsError("Can only open files");
 			}
 
+			// Check length and add chunks if necessary
+			let size = (inode.chunks.length * inode.chunksize) - inode.trim;
+			let atLeastSize = offset + data.length;
+			if (atLeastSize > size) {
+				this.truncate(inode, atLeastSize, chunkStore);
+			}
+
 			let cursor = 0;
 			while (cursor < data.length) {
 				let fileOffset = cursor + offset;
@@ -750,7 +756,7 @@ class IdbFs {
 				let nextChunkOffset = fileOffset % inode.chunksize;
 				let nextChunkData = data.slice(cursor, Math.min(cursor + inode.chunksize - nextChunkOffset, data.length));
 
-				if (nextChunkId === undefined) {
+				if (nextChunkId === undefined || nextChunkId == -1) {
 					// Create new chunk
 					const newData = new Uint8Array(inode.chunksize);
 					newData.set(nextChunkData, nextChunkOffset);
@@ -767,7 +773,7 @@ class IdbFs {
 			}
 
 			// Update trim and store
-			inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
+			// inode.trim = inode.chunksize - ((offset + data.length) % inode.chunksize);
 			await inodeStore.put(inode);
 
 			return data.length;
