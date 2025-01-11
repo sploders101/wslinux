@@ -27,6 +27,10 @@ use clap::Parser;
 
 #[derive(Parser)]
 struct Args {
+    /// Source string. Kept for compatibility with fstab. Can be anything.
+    source: String,
+
+    /// The location you want to mount to
     mountpoint: String,
 
     #[arg(short = 'o', long, default_value = "")]
@@ -199,7 +203,7 @@ fn parse_options(opts: &str) -> impl Iterator<Item = MountOption> {
                 options.remove(&MountOption::Atime);
             }
             "" => {}
-            _ => panic!("Unknown option {option:?}"),
+            _ => {},
         }
     }
     return options.into_iter();
