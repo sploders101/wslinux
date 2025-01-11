@@ -1,6 +1,6 @@
 import './style.css'
 
-import { IdbFs, S_IFDIR, S_IFMT, S_IFREG, openIdbFs } from "./idbfs";
+import { IdbFs, S_IFMT, S_IFREG, openIdbFs } from "./idbfs";
 import { connectFilesystem } from './idbfs-connector';
 import { Entry } from './idbfs/types';
 
