@@ -10,10 +10,10 @@ I want to talk about it."
 
 ## Current Status
 
-I haven't had a lot of time to work on it lately, but the project *has* been moving, and this commit marks the first
-time I think it's ready for a live test. As I'm writing this, I am installing libvirt so that I can spin up a VM and
-attempt to install Arch Linux to my web browser. If I am able to do this successfully, I will set up a build process
-in CI to generate a bootstrap database capable of booting Arch Linux!
+WSLinux can officially network boot a qemu VM! Using the latest code, I was able to successfully install linux onto
+the filesystem and craft a UKI image to boot it!
+
+The next step is to package it up into a distributable database so you can try it for yourself.
 
 
 ## My thought process
@@ -80,9 +80,9 @@ even better since it would integrate with the existing system initramfs. I'll ha
 | |                                            |
 |-|--------------------------------------------|
 |✓| IndexedDB-backed filesystem in the browser |
-|o| JavaScript protocol & connector            |
-| | Rust-based FUSE connector                  |
-| | Initramfs & Arch install                   |
+|✓| JavaScript protocol & connector            |
+|✓| Rust-based FUSE connector                  |
+|✓| Initramfs & Arch install                   |
 | | Database preseed for distribution          |
 
 
