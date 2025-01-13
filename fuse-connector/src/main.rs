@@ -35,43 +35,55 @@ struct Args {
 
     #[arg(short = 'o', long, default_value = "")]
     options: String,
+
+    /// Prevents the process from forking into the background. Useful for testing.
+    #[arg(short = 'f', long, default_value = "false")]
+    foreground: bool,
 }
 
 fn main() {
     let args = Args::parse();
     let options = parse_options(&args.options).collect::<Vec<_>>();
-    let (recv, send) = nix::unistd::pipe().expect("Couldn't create pipe");
-    unsafe {
-        match nix::unistd::fork().expect("Couldn't fork wsfs-connector") {
-            ForkResult::Parent { .. } => {
-                nix::unistd::close(send.as_raw_fd()).unwrap();
+    if args.foreground {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Couldn't build tokio runtime");
+        runtime.block_on(tokio_entrypoint(None, args, options));
+    } else {
+        let (recv, send) = nix::unistd::pipe().expect("Couldn't create pipe");
+        unsafe {
+            match nix::unistd::fork().expect("Couldn't fork wsfs-connector") {
+                ForkResult::Parent { .. } => {
+                    nix::unistd::close(send.as_raw_fd()).unwrap();
 
-                let mut file = std::fs::File::from(recv);
-                let mut buf = Vec::new();
-                let _ = file.read_to_end(&mut buf);
-                let mut packet = PacketReader::new(&buf);
-                let return_code = packet.read_i32();
-                if return_code != Some(0) {
-                    panic!("Return code from child was not 0. Something went very wrong.");
+                    let mut file = std::fs::File::from(recv);
+                    let mut buf = Vec::new();
+                    let _ = file.read_to_end(&mut buf);
+                    let mut packet = PacketReader::new(&buf);
+                    let return_code = packet.read_i32();
+                    if return_code != Some(0) {
+                        panic!("Return code from child was not 0. Something went very wrong.");
+                    }
                 }
-            }
-            ForkResult::Child => {
-                nix::unistd::close(recv.as_raw_fd()).unwrap();
-                let file = std::fs::File::from(send);
+                ForkResult::Child => {
+                    nix::unistd::close(recv.as_raw_fd()).unwrap();
+                    let file = std::fs::File::from(send);
 
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("Couldn't build tokio runtime");
-                runtime.block_on(tokio_entrypoint(file, args, options));
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Couldn't build tokio runtime");
+                    runtime.block_on(tokio_entrypoint(Some(file), args, options));
+                }
             }
         }
     }
 }
 
-async fn tokio_entrypoint(file: std::fs::File, args: Args, options: Vec<MountOption>) {
+async fn tokio_entrypoint(file: Option<std::fs::File>, args: Args, options: Vec<MountOption>) {
     pretty_env_logger::init();
-    let file = Arc::new(tokio::sync::Mutex::new(Some(file)));
+    let file = Arc::new(tokio::sync::Mutex::new(file));
     let args = Arc::new(args);
     let options = Arc::new(options);
 
