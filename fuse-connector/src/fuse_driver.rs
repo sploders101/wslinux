@@ -605,7 +605,7 @@ impl<T: FsComms> Filesystem for Wsfs<T> {
         packet.write_u64(ino);
         packet.write_u64(fh);
         packet.write_i64(offset);
-        packet.write_bytes(data).unwrap();
+        packet.write_bytes(&data[0..10000.min(data.len())]).unwrap();
         packet.write_u32(write_flags);
         packet.write_i32(flags);
 
