@@ -63,6 +63,7 @@ async function readDemo(fs: IdbFs) {
 	wsButton.addEventListener("click", async () => {
 		const ws = await new Promise<WebSocket>((res, rej) => {
 			const ws = new WebSocket(`wss://${location.hash.replace(/^#/, "")}/fshost`);
+			ws.binaryType = "arraybuffer";
 			ws.addEventListener("open", () => res(ws));
 			ws.addEventListener("error", () => rej());
 		});

@@ -69,4 +69,4 @@ export const constants = {
 		size: 0,
 		data: 1,
 	},
-};
+} as const;
